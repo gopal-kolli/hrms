@@ -15,7 +15,7 @@
 
 		<div
 			v-if="leaveBalance.loading"
-			class="grid grid-cols-2 sm:grid-cols-3 gap-px mt-3 border border-gray-200 rounded-xl overflow-hidden bg-gray-200"
+			class="grid grid-cols-2 sm:grid-cols-4 gap-px mt-3 border border-gray-200 rounded-xl overflow-hidden bg-white"
 			aria-label="Loading leave balances"
 		>
 			<div v-for="item in 3" :key="item" class="bg-white p-4 space-y-3">
@@ -37,7 +37,7 @@
 
 		<div
 			v-else-if="balanceEntries.length"
-			class="grid grid-cols-2 sm:grid-cols-3 gap-px mt-3 border border-gray-200 rounded-xl overflow-hidden bg-gray-200"
+			class="grid grid-cols-2 sm:grid-cols-4 gap-px mt-3 border border-gray-200 rounded-xl overflow-hidden bg-white"
 		>
 			<div
 				v-for="[leaveType, allocation] in balanceEntries"
@@ -45,7 +45,7 @@
 				class="min-w-0 bg-white p-4"
 			>
 				<p
-					class="m-0 truncate text-sm font-medium text-gray-700"
+					class="m-0 text-sm font-medium text-gray-700"
 					:title="__(leaveType, null, 'Leave Type')"
 				>
 					{{ __(leaveType, null, "Leave Type") }}

@@ -405,3 +405,5 @@ body {
 		animation: none;
 	}
 }
+
+.comp-off-intro > a { flex-shrink: 0; white-space: nowrap; }

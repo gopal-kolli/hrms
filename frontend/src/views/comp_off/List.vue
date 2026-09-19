@@ -2,6 +2,9 @@
 	<BaseLayout :pageTitle="__('Comp Off')">
 		<template #body>
 			<main class="comp-off-page" aria-live="polite">
+					<router-link :to="{ name: 'Home' }" class="inline-flex items-center gap-2 mb-5 text-sm font-medium text-gray-700">
+						<FeatherIcon name="arrow-left" class="h-4 w-4" />{{ __("Back to home") }}
+					</router-link>
 				<div v-if="loadingContext" class="comp-off-skeleton" aria-label="Loading Comp Off">
 					<div class="skeleton-line w-2/5"></div>
 					<div class="skeleton-line"></div>

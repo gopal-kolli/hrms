@@ -1,11 +1,13 @@
 <template>
 	<BaseLayout>
 		<template #body>
-			<div class="flex flex-col items-center my-7 p-4 gap-7 max-w-3xl mx-auto">
+			<div class="flex flex-col items-center my-5 p-4 gap-7 w-full max-w-3xl mx-auto">
 				<CheckInPanel />
 				<LeaveBalance />
-				<QuickLinks :items="quickLinks" :title="__('Quick Links')" />
-				<RequestPanel />
+				<div class="grid w-full gap-7 md:grid-cols-2 items-start">
+					<QuickLinks :items="quickLinks" :title="__('Quick Links')" />
+					<RequestPanel />
+				</div>
 			</div>
 		</template>
 	</BaseLayout>
