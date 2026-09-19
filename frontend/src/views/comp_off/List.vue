@@ -41,7 +41,10 @@
 							</p>
 						</div>
 						<router-link :to="{ name: 'CompOffCreateView' }" v-slot="{ navigate }">
-							<Button variant="solid" class="min-h-11 shrink-0" @click="navigate"
+							<Button
+								variant="solid"
+								class="portal-primary-button min-h-11 shrink-0"
+								@click="navigate"
 								><template #prefix><FeatherIcon name="plus" class="h-4 w-4" /></template
 								>{{ __("Request credit") }}</Button
 							>
@@ -145,13 +148,14 @@
 import { computed, inject, ref } from "vue"
 import { onIonViewWillEnter } from "@ionic/vue"
 import { Button, FeatherIcon } from "frappe-ui"
-import { useRouter } from "vue-router"
+import { useRouter, useRoute } from "vue-router"
 import BaseLayout from "@/components/BaseLayout.vue"
 import { bootEnablesCompOff, compOffContext, compOffRequests } from "@/data/compOff"
 
 const __ = inject("$translate")
 const dayjs = inject("$dayjs")
 const router = useRouter()
+const route = useRoute()
 const activeTab = ref("mine")
 const loadingContext = ref(true)
 const error = ref("")
@@ -193,7 +197,10 @@ async function initialize() {
 		contextError.value = messageFor(err)
 	}
 	loadingContext.value = false
-	if (enabled.value && !contextError.value) await loadRequests()
+	if (enabled.value && !contextError.value) {
+		activeTab.value = route.query.view === "approval" && isManager.value ? "team" : "mine"
+		await loadRequests()
+	}
 }
 
 onIonViewWillEnter(initialize)

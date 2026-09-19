@@ -1,9 +1,7 @@
 <template>
 	<ion-header class="ion-no-border">
-		<div class="w-full max-w-3xl mx-auto">
-			<div
-				class="flex flex-row bg-white shadow-sm py-4 px-3 items-center justify-between border-b"
-			>
+		<div class="portal-list-header w-full max-w-3xl mx-auto">
+			<div class="portal-subheader flex flex-row bg-white py-4 px-3 items-center justify-between">
 				<div class="flex flex-row items-center">
 					<Button variant="ghost" class="!px-1 mr-1 hover:bg-white" @click="router.back()">
 						<FeatherIcon name="chevron-left" class="h-5 w-5" />
@@ -45,7 +43,7 @@
 		</ion-refresher>
 
 		<div
-			class="flex flex-col items-center mb-7 p-4 h-full w-full max-w-3xl mx-auto overflow-y-auto"
+			class="portal-list-content flex flex-col items-center mb-7 p-4 h-full w-full max-w-3xl mx-auto overflow-y-auto"
 			ref="scrollContainer"
 			@scroll="() => handleScroll()"
 		>

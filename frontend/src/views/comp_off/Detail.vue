@@ -100,6 +100,7 @@
 								>{{ __("Reject") }}</Button
 							><Button
 								variant="solid"
+								class="portal-primary-button"
 								:loading="deciding === 'Approved'"
 								:disabled="Boolean(deciding)"
 								@click="decide('Approved')"
@@ -114,6 +115,7 @@
 </template>
 
 <script setup>
+import { submitCompOff } from "@/utils/compOffRetry"
 import { inject, ref } from "vue"
 import { onIonViewWillEnter } from "@ionic/vue"
 import { Button, FeatherIcon } from "frappe-ui"
@@ -170,7 +172,7 @@ async function decide(decision) {
 	deciding.value = decision
 	decisionError.value = ""
 	try {
-		request.value = await decideCompOffRequest.submit({
+		request.value = await submitCompOff(decideCompOffRequest, {
 			name: request.value.name,
 			decision,
 			reason: decisionReason.value,

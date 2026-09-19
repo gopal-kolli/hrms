@@ -38,6 +38,9 @@
 							}}
 						</p>
 					</div>
+					<p v-if="manager" class="comp-off-manager">
+						{{ __("Sent to {0} for approval", [manager.employee_name]) }}
+					</p>
 					<div v-if="!manager" class="comp-off-error" role="alert">
 						{{
 							__(
@@ -99,9 +102,14 @@
 								@click="router.back()"
 								>{{ __("Cancel") }}</Button
 							>
-							<Button variant="solid" type="submit" :loading="submitting" :disabled="!canSubmit">{{
-								__("Request credit")
-							}}</Button>
+							<Button
+								variant="solid"
+								class="portal-primary-button"
+								type="submit"
+								:loading="submitting"
+								:disabled="!canSubmit"
+								>{{ __("Request credit") }}</Button
+							>
 						</div>
 					</template>
 				</form>
@@ -111,6 +119,7 @@
 </template>
 
 <script setup>
+import { submitCompOff } from "@/utils/compOffRetry"
 import { computed, inject, ref } from "vue"
 import { onIonViewWillEnter } from "@ionic/vue"
 import { Button, FeatherIcon } from "frappe-ui"
@@ -162,7 +171,7 @@ async function submit() {
 	submitting.value = true
 	error.value = ""
 	try {
-		const request = await createCompOffRequest.submit({
+		const request = await submitCompOff(createCompOffRequest, {
 			work_date: workDate.value,
 			// The server derives this from submitted attendance and verifies this value.
 			half_day: selectedDate.value.half_day ? 1 : 0,

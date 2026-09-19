@@ -1,19 +1,21 @@
 <template>
-	<div class="flex flex-col bg-white rounded w-full py-6 px-4 border-none">
-		<h2 class="text-lg font-bold text-gray-900">
-			{{ __("Hey, {0} 👋", [employee?.data?.first_name]) }}
+	<div class="checkin-panel">
+		<h2>
+			{{ __("Hello, {0}", [employee?.data?.first_name]) }}
 		</h2>
 
 		<template v-if="settings.data?.allow_employee_checkin_from_mobile_app">
-			<div class="font-medium text-sm text-gray-500 mt-1.5" v-if="lastLog">
-				<span>{{ __("Last {0} was at {1}", [__(lastLogType), formatTimestamp(lastLog.time)]) }}</span>
+			<div class="checkin-detail" v-if="lastLog">
+				<span>{{
+					__("Last {0} was at {1}", [__(lastLogType), formatTimestamp(lastLog.time)])
+				}}</span>
 				<span class="whitespace-pre"> &middot; </span>
 				<router-link :to="{ name: 'EmployeeCheckinListView' }" v-slot="{ navigate }">
 					<span @click="navigate" class="underline">View List</span>
 				</router-link>
 			</div>
 			<Button
-				class="mt-4 mb-1 drop-shadow-sm py-5 text-base"
+				class="checkin-action"
 				id="open-checkin-modal"
 				:loading="checkins.list.loading"
 				@click="handleEmployeeCheckin"
@@ -28,7 +30,7 @@
 			</Button>
 		</template>
 
-		<div v-else class="font-medium text-sm text-gray-500 mt-1.5">
+		<div v-else class="checkin-detail">
 			{{ dayjs().format("ddd, D MMMM, YYYY") }}
 		</div>
 	</div>
@@ -70,7 +72,12 @@
 				</div>
 			</template>
 
-			<Button :loading="checkins.insert.loading" variant="solid" class="w-full py-5 text-sm disabled:bg-gray-700" @click="submitLog(nextAction.action)">
+			<Button
+				:loading="checkins.insert.loading"
+				variant="solid"
+				class="w-full py-5 text-sm disabled:bg-gray-700"
+				@click="submitLog(nextAction.action)"
+			>
 				{{ __("Confirm {0}", [nextAction.label]) }}
 			</Button>
 		</div>

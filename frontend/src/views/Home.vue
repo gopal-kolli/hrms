@@ -1,89 +1,194 @@
 <template>
 	<BaseLayout>
 		<template #body>
-			<div class="flex flex-col items-center my-5 p-4 gap-7 w-full max-w-3xl mx-auto">
-				<CheckInPanel />
-				<LeaveBalance />
-				<div class="grid w-full gap-7 md:grid-cols-2 items-start">
-					<QuickLinks :items="quickLinks" :title="__('Quick Links')" />
-					<RequestPanel />
-				</div>
-			</div>
+			<main class="home-page">
+				<section class="home-intro" aria-labelledby="my-leave-heading">
+					<div>
+						<h1 id="my-leave-heading">{{ __("My leave") }}</h1>
+						<p>{{ employeeName }} <span aria-hidden="true">·</span> {{ today }}</p>
+					</div>
+					<CheckInPanel v-if="settings.data?.allow_employee_checkin_from_mobile_app" />
+				</section>
+				<section class="leave-workspace">
+					<LeaveBalance />
+					<section class="leave-actions" aria-label="Leave actions">
+						<router-link
+							:to="{ name: 'LeaveApplicationFormView' }"
+							class="leave-action leave-action-primary"
+							><FeatherIcon name="calendar" class="h-5 w-5" /><span>{{
+								__("Request leave")
+							}}</span></router-link
+						>
+						<router-link
+							v-if="compOffEnabled"
+							:to="{ name: 'CompOffCreateView' }"
+							class="leave-action leave-action-secondary"
+							><FeatherIcon name="plus-circle" class="h-5 w-5" /><span>{{
+								__("Request Comp Off credit")
+							}}</span></router-link
+						>
+					</section>
+					<p v-if="compOffEnabled" class="comp-off-hint">
+						{{ __("Worked on a holiday? Request manager approval for a Comp Off credit.") }}
+					</p>
+				</section>
+				<section class="home-sections">
+					<section class="request-section" aria-labelledby="leave-requests-heading">
+						<div class="section-heading">
+							<h2 id="leave-requests-heading">{{ __("Your leave requests") }}</h2>
+							<router-link :to="{ name: 'LeaveApplicationListView' }" class="portal-text-link">{{
+								__("View all")
+							}}</router-link>
+						</div>
+						<div
+							v-if="myLeaves.loading"
+							class="request-list request-loading"
+							:aria-label="__('Loading leave requests')"
+						>
+							<div v-for="item in 2" :key="item" class="request-loading-row"></div>
+						</div>
+						<div v-else-if="myLeaves.data?.length" class="request-list">
+							<router-link
+								v-for="request in myLeaves.data.slice(0, 3)"
+								:key="request.name"
+								:to="{ name: 'LeaveApplicationDetailView', params: { id: request.name } }"
+								class="request-row"
+								><div>
+									<strong>{{ __(request.leave_type, null, "Leave Type") }}</strong
+									><span>{{ request.leave_dates }}</span>
+								</div>
+								<span class="request-status" :class="request.status?.toLowerCase()">{{
+									__(request.status, null, "Leave Application")
+								}}</span></router-link
+							>
+						</div>
+						<p v-else-if="myLeaves.error" class="request-empty request-error">
+							{{ __("Leave requests could not load. Try again from your leave history.") }}
+						</p>
+						<p v-else class="request-empty">{{ __("No leave requests yet.") }}</p>
+					</section>
+					<section
+						v-if="compOffEnabled"
+						class="request-section"
+						aria-labelledby="comp-off-requests-heading"
+					>
+						<div class="section-heading">
+							<h2 id="comp-off-requests-heading">{{ __("Comp Off activity") }}</h2>
+							<router-link :to="{ name: 'CompOffListView' }" class="portal-text-link">{{
+								__("View all")
+							}}</router-link>
+						</div>
+						<div
+							v-if="homeCompOffRequests.loading"
+							class="request-list request-loading"
+							:aria-label="__('Loading Comp Off requests')"
+						>
+							<div v-for="item in 2" :key="item" class="request-loading-row"></div>
+						</div>
+						<div v-else-if="homeCompOffRequests.data?.length" class="request-list">
+							<router-link
+								v-for="request in homeCompOffRequests.data.slice(0, 3)"
+								:key="request.name"
+								:to="{ name: 'CompOffDetailView', params: { id: request.name } }"
+								class="request-row"
+								><div>
+									<strong>{{ __("Comp Off credit") }}</strong
+									><span
+										>{{ formatDate(request.work_from_date) }} <span aria-hidden="true">·</span>
+										{{ request.half_day ? __("0.5 day") : __("1 day") }}</span
+									>
+								</div>
+								<span class="request-status" :class="request.status?.toLowerCase()">{{
+									__(request.status)
+								}}</span></router-link
+							>
+						</div>
+						<p
+							v-else-if="compOffError || homeCompOffRequests.error"
+							class="request-empty request-error"
+						>
+							{{ __("Comp Off requests could not load. Try again from Comp Off.") }}
+						</p>
+						<p v-else class="request-empty">{{ __("No Comp Off credit requests yet.") }}</p>
+						<router-link
+							v-if="isManager"
+							:to="{ name: 'CompOffListView', query: { view: 'approval' } }"
+							class="manager-queue"
+							><FeatherIcon name="users" class="h-4 w-4" />{{
+								__("Review team Comp Off requests")
+							}}</router-link
+						>
+					</section>
+				</section>
+				<section class="other-services" aria-labelledby="other-services-heading">
+					<h2 id="other-services-heading">{{ __("Other services") }}</h2>
+					<div class="service-links">
+						<router-link v-for="link in quickLinks" :key="link.title" :to="{ name: link.route }"
+							><component :is="link.icon" class="h-5 w-5" /><span>{{ link.title }}</span
+							><FeatherIcon name="chevron-right" class="h-4 w-4"
+						/></router-link>
+					</div>
+				</section>
+			</main>
 		</template>
 	</BaseLayout>
 </template>
 
 <script setup>
-import { computed, inject, markRaw, onMounted } from "vue"
-
-import CheckInPanel from "@/components/CheckInPanel.vue"
-import QuickLinks from "@/components/QuickLinks.vue"
+import { computed, inject, markRaw, ref } from "vue"
+import { createResource, FeatherIcon } from "frappe-ui"
+import { onIonViewWillEnter } from "@ionic/vue"
 import BaseLayout from "@/components/BaseLayout.vue"
-import RequestPanel from "@/components/RequestPanel.vue"
+import CheckInPanel from "@/components/CheckInPanel.vue"
 import LeaveBalance from "@/components/LeaveBalance.vue"
 import AttendanceIcon from "@/components/icons/AttendanceIcon.vue"
 import ShiftIcon from "@/components/icons/ShiftIcon.vue"
-import LeaveIcon from "@/components/icons/LeaveIcon.vue"
 import ExpenseIcon from "@/components/icons/ExpenseIcon.vue"
 import EmployeeAdvanceIcon from "@/components/icons/EmployeeAdvanceIcon.vue"
 import SalaryIcon from "@/components/icons/SalaryIcon.vue"
+import { settings } from "@/data/settings"
+import { myLeaves } from "@/data/leaves"
 import { bootEnablesCompOff, compOffContext } from "@/data/compOff"
 
 const __ = inject("$translate")
-
-const quickLinks = computed(() => {
-	const links = [
-		{
-			icon: markRaw(AttendanceIcon),
-			title: __("Request Attendance"),
-			route: "AttendanceRequestFormView",
-		},
-		{
-			icon: markRaw(ShiftIcon),
-			title: __("Request a Shift"),
-			route: "ShiftRequestFormView",
-		},
-		{
-			icon: markRaw(LeaveIcon),
-			title: __("Request Leave"),
-			route: "LeaveApplicationFormView",
-		},
-		{
-			icon: markRaw(ExpenseIcon),
-			title: __("Claim an Expense"),
-			route: "ExpenseClaimFormView",
-		},
-		{
-			icon: markRaw(EmployeeAdvanceIcon),
-			title: __("Request an Advance"),
-			route: "EmployeeAdvanceFormView",
-		},
-		{
-			icon: markRaw(SalaryIcon),
-			title: __("View Salary Slips"),
-			route: "SalarySlipsDashboard",
-		},
-	]
-
-	if (compOffEnabled.value) {
-		links.splice(3, 0, {
-			icon: markRaw(LeaveIcon),
-			title: __("Comp Off"),
-			route: "CompOffListView",
-		})
-	}
-
-	return links
-})
-
+const dayjs = inject("$dayjs")
+const employee = inject("$employee")
 const bootFlag = window.frappe?.boot?.comp_off_self_service
 const compOffEnabled = computed(
 	() => bootEnablesCompOff() || compOffContext.data?.enabled === true
 )
+const isManager = computed(() => compOffContext.data?.is_manager === true)
+const employeeName = computed(() => employee?.data?.first_name || __("Employee"))
+const today = computed(() => dayjs().format("dddd, D MMMM"))
+const formatDate = (date) => dayjs(date).format("D MMM")
+const homeCompOffRequests = createResource({ url: "hrms.api.comp_off.get_requests", auto: false })
+const compOffError = ref(false)
+const quickLinks = [
+	{ icon: markRaw(AttendanceIcon), title: __("Attendance"), route: "AttendanceDashboard" },
+	{ icon: markRaw(ShiftIcon), title: __("Request a Shift"), route: "ShiftRequestFormView" },
+	{
+		icon: markRaw(AttendanceIcon),
+		title: __("Attendance requests"),
+		route: "AttendanceRequestListView",
+	},
+	{ icon: markRaw(ExpenseIcon), title: __("Expenses"), route: "ExpenseClaimsDashboard" },
+	{
+		icon: markRaw(EmployeeAdvanceIcon),
+		title: __("Request an Advance"),
+		route: "EmployeeAdvanceFormView",
+	},
+	{ icon: markRaw(SalaryIcon), title: __("Salary slips"), route: "SalarySlipsDashboard" },
+]
 
-onMounted(() => {
-	// When older boot data is served, context is the safe fallback. A known-off
-	// flag never triggers Comp Off requests.
-	if (bootFlag === undefined || bootFlag === null) compOffContext.reload()
-})
+async function loadCompOff() {
+	compOffError.value = false
+	try {
+		if (bootFlag !== false && bootFlag !== 0) await compOffContext.reload()
+		if (compOffEnabled.value) await homeCompOffRequests.fetch({ team: 0 })
+	} catch (_) {
+		compOffError.value = true
+	}
+}
+
+onIonViewWillEnter(loadCompOff)
 </script>
