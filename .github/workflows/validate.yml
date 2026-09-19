@@ -38,6 +38,7 @@ jobs:
           npm install -g yarn
           cd frontend
           yarn install --frozen-lockfile
+          node --test tests/compOffRetry.test.js
           yarn build
       - name: Install exact framework and ERPNext bases
         run: bash .github/helper/install-comp-off-test.sh

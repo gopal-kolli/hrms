@@ -1,19 +1,18 @@
 <template>
 	<ion-page>
-		<ion-header class="ion-no-border">
-			<div class="w-full max-w-3xl mx-auto">
-				<div class="flex flex-col bg-white shadow-sm p-4">
-					<div class="flex flex-row justify-between items-center">
-						<div class="flex flex-row items-center gap-2">
-							<h2 class="text-xl font-bold text-gray-900">
-								{{ props.pageTitle || __("Frappe HR") }}
-							</h2>
+		<ion-header class="ion-no-border portal-header">
+			<div class="portal-header-inner">
+				<div class="portal-brandbar">
+					<div class="flex flex-row justify-between items-center w-full">
+						<div class="portal-brand" aria-label="SOLARA Atlas">
+							<span>SOLARA</span><small>Atlas</small>
 						</div>
 						<div class="flex flex-row items-center gap-3 ml-auto">
 							<router-link
 								:to="{ name: 'Notifications' }"
 								v-slot="{ navigate }"
-								class="flex flex-col items-center"
+								class="portal-icon-link"
+								:aria-label="__('Notifications')"
 							>
 								<span class="relative inline-block" @click="navigate">
 									<FeatherIcon name="bell" class="h-6 w-6" />
@@ -24,7 +23,11 @@
 									</span>
 								</span>
 							</router-link>
-							<router-link :to="{ name: 'Profile' }" class="flex flex-col items-center">
+							<router-link
+								:to="{ name: 'Profile' }"
+								class="portal-avatar-link"
+								:aria-label="__('Open profile')"
+							>
 								<Avatar :image="user.data.user_image" :label="user.data.first_name" size="xl" />
 							</router-link>
 						</div>
@@ -33,8 +36,8 @@
 			</div>
 		</ion-header>
 
-		<ion-content class="ion-no-padding">
-			<div class="flex flex-col min-h-full w-full max-w-3xl mx-auto">
+		<ion-content class="ion-no-padding portal-ion-content">
+			<div class="portal-content">
 				<slot name="body"></slot>
 			</div>
 		</ion-content>

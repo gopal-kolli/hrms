@@ -1,8 +1,8 @@
 <template>
 	<div class="flex flex-col h-full w-full" v-if="isFormReady">
-		<div class="w-full max-w-3xl mx-auto h-full bg-white flex flex-col">
+		<div class="portal-form-shell w-full max-w-3xl mx-auto h-full bg-white flex flex-col">
 			<header
-				class="flex flex-row bg-white shadow-sm py-4 px-3 items-center sticky top-0 z-[1000]"
+				class="portal-subheader flex flex-row bg-white py-4 px-3 items-center sticky top-0 z-[1000]"
 			>
 				<Button variant="ghost" class="!pl-0 hover:bg-white" @click="router.back()">
 					<FeatherIcon name="chevron-left" class="h-5 w-5" />
@@ -59,7 +59,7 @@
 							<li class="mr-2 whitespace-nowrap" v-for="tab in tabs">
 								<button
 									@click="activeTab = tab.name"
-									class="inline-block py-4 px-2 border-b-2 border-transparent rounded-t-lg"
+									class="inline-block py-4 px-2 border-b border-transparent rounded-t-lg"
 									:class="[
 										activeTab === tab.name
 											? '!text-gray-800 !border-gray-800'

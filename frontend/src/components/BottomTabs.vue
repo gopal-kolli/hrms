@@ -1,19 +1,11 @@
 <template>
-	<ion-tab-bar
-		slot="bottom"
-		class="bg-white shadow-md w-full max-w-3xl mx-auto py-2 pb-2 standalone:pb-safe-bottom"
-	>
+	<ion-tab-bar slot="bottom" class="portal-tabs">
 		<ion-tab-button
 			v-for="item in tabItems"
 			:key="item.title"
 			:tab="item.title"
 			:href="item.route"
-			:class="[
-				'bg-white text-xs space-y-1.5 !hover:border-gray-300 !hover:text-gray-700 transition active:scale-95',
-				route.path === item.route
-					? 'border-gray-900 text-gray-800 font-semibold'
-					: 'text-gray-600 font-normal',
-			]"
+			:class="['portal-tab-button', route.path === item.route ? 'is-active' : '']"
 		>
 			<component :is="item.icon" class="h-5 w-5" />
 			<div>{{ item.title }}</div>

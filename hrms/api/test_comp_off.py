@@ -242,21 +242,29 @@ def _run_concurrency_acceptance(case):
 		barrier = Barrier(len(tasks))
 
 		def worker(task):
-			frappe.init(site=site, sites_path=sites_path)
-			frappe.connect()
-			try:
-				frappe.flags.in_test = True
-				frappe.conf.enable_comp_off_self_service = 1
-				frappe.set_user(employee_user if task[0] == "create" else manager_user)
-				barrier.wait(timeout=30)
-				if task[0] == "create":
-					result = comp_off.create_request(today(), "Concurrent holiday work")
-				else:
-					result = comp_off.decide_request(task[1], "Approved")
-				frappe.db.commit()  # nosemgrep: simulate separate successful HTTP transactions
-				return result
-			finally:
-				frappe.destroy()
+			# MariaDB can abort a stale snapshot after waiting for the employee lock.
+			# Retry at the simulated HTTP boundary, never inside the endpoint.
+			for attempt in range(4):
+				frappe.init(site=site, sites_path=sites_path)
+				frappe.connect()
+				try:
+					frappe.flags.in_test = True
+					frappe.conf.enable_comp_off_self_service = 1
+					frappe.set_user(employee_user if task[0] == "create" else manager_user)
+					if attempt == 0:
+						barrier.wait(timeout=30)
+					if task[0] == "create":
+						result = comp_off.create_request(today(), "Concurrent holiday work")
+					else:
+						result = comp_off.decide_request(task[1], "Approved")
+					frappe.db.commit()  # nosemgrep: simulate separate successful HTTP transactions
+					return result
+				except frappe.QueryDeadlockError:
+					frappe.db.rollback()
+					if attempt == 3:
+						raise
+				finally:
+					frappe.destroy()
 
 		with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
 			return list(pool.map(worker, tasks))
