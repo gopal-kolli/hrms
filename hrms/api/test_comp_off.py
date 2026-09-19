@@ -110,6 +110,8 @@ class TestCompOffPortal(HRMSTestSuite):
 		with self.assertRaises(frappe.PermissionError):
 			doc.save(ignore_permissions=True)
 		frappe.conf.enable_comp_off_self_service = 0
+		doc.reload()
+		doc.portal_request = 0
 		with self.assertRaises(frappe.PermissionError):
 			doc.submit()
 		with self.assertRaises(frappe.PermissionError):
@@ -205,3 +207,82 @@ class TestCompOffPortal(HRMSTestSuite):
 		self.assertIsNone(comp_off.get_context()["manager"])
 		with self.assertRaises(frappe.ValidationError):
 			self.create()
+
+
+def run_concurrency_acceptance():
+	"""Four independent DB connections; ONLY the disposable GitHub CI test site.
+
+	Fixtures intentionally commit so real competing transactions can see them.
+	The entire CI database is ephemeral; never run this on a Cloud site.
+	"""
+	import os
+	from concurrent.futures import ThreadPoolExecutor
+	from threading import Barrier
+
+	if frappe.local.site != "test_site" or os.environ.get("GITHUB_ACTIONS") != "true":
+		raise RuntimeError("Concurrency fixture is restricted to disposable GitHub CI")
+	case = TestCompOffPortal("test_credit_and_retry_are_exactly_once")
+	case.setUp()
+	frappe.db.commit()  # nosemgrep: disposable CI fixture visibility between connections
+	site = frappe.local.site
+	sites_path = frappe.local.sites_path
+	employee_user = case.employee.user_id
+	manager_user = case.manager.user_id
+
+	def parallel(tasks):
+		barrier = Barrier(len(tasks))
+
+		def worker(task):
+			frappe.init(site=site, sites_path=sites_path)
+			frappe.connect()
+			try:
+				frappe.conf.enable_comp_off_self_service = 1
+				frappe.set_user(employee_user if task[0] == "create" else manager_user)
+				barrier.wait(timeout=30)
+				if task[0] == "create":
+					result = comp_off.create_request(today(), "Concurrent holiday work")
+				else:
+					result = comp_off.decide_request(task[1], "Approved")
+				frappe.db.commit()  # nosemgrep: simulate separate successful HTTP transactions
+				return result
+			finally:
+				frappe.destroy()
+
+		with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+			return list(pool.map(worker, tasks))
+
+	created = parallel([("create", None), ("create", None)])
+	assert created[0]["name"] == created[1]["name"], "Concurrent create double request"
+	frappe.db.rollback()
+	frappe.set_user(employee_user)
+	earlier = comp_off.create_request(str(add_days(today(), -1)), "Earlier holiday work")
+	frappe.db.commit()  # nosemgrep: make second work date visible to competing reviewers
+	decisions = parallel(
+		[
+			("approve", created[0]["name"]),
+			("approve", created[0]["name"]),
+			("approve", earlier["name"]),
+			("approve", earlier["name"]),
+		]
+	)
+	frappe.db.rollback()
+	allocations = {r["leave_allocation"] for r in decisions}
+	assert len(allocations) == 1, "Concurrent approvals created overlapping allocations"
+	rows = frappe.get_all(
+		"Leave Ledger Entry",
+		filters={"transaction_name": next(iter(allocations))},
+		fields=["leaves", "from_date"],
+	)
+	assert len(rows) == 2 and sum(row.leaves for row in rows) == 2, (
+		"Concurrent approvals duplicated/lost credit"
+	)
+	assert {getdate(row.from_date) for row in rows} == {getdate(today()), getdate(add_days(today(), 1))}
+	return {
+		"concurrent_create_requests": 2,
+		"unique_request": 1,
+		"concurrent_approval_attempts": 4,
+		"unique_allocations": 1,
+		"ledger_entries": 2,
+		"credited_days": 2,
+		"result": "PASS",
+	}
