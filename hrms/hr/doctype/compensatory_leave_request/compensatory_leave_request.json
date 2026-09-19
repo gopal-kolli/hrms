@@ -20,7 +20,12 @@
   "half_day_date",
   "column_break_4",
   "reason",
-  "amended_from"
+  "amended_from",
+  "portal_request",
+  "portal_status",
+  "decision_by",
+  "decision_on",
+  "decision_reason"
  ],
  "fields": [
   {
@@ -110,6 +115,45 @@
    "options": "Compensatory Leave Request",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "portal_request",
+   "fieldtype": "Check",
+   "label": "Employee Portal Request",
+   "read_only": 1,
+   "default": "0",
+   "no_copy": 1
+  },
+  {
+   "fieldname": "portal_status",
+   "fieldtype": "Select",
+   "label": "Approval Status",
+   "options": "\nPending\nApproved\nRejected",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "decision_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Decision By",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "decision_on",
+   "fieldtype": "Datetime",
+   "label": "Decision On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "decision_reason",
+   "fieldtype": "Small Text",
+   "label": "Manager Note",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "is_submittable": 1,

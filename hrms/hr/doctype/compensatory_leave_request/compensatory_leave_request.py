@@ -19,7 +19,34 @@ from hrms.hr.utils import (
 
 
 class CompensatoryLeaveRequest(Document):
+	def before_validate(self):
+		from hrms.api.comp_off import guard_write
+
+		guard_write(self)
+
+	def before_submit(self):
+		from hrms.api.comp_off import guard_write
+
+		guard_write(self)
+
+	def before_cancel(self):
+		from hrms.api.comp_off import guard_write
+
+		guard_write(self)
+
+	def before_update_after_submit(self):
+		from hrms.api.comp_off import guard_write
+
+		guard_write(self)
+
+	def on_trash(self):
+		from hrms.api.comp_off import guard_write
+
+		guard_write(self)
+
 	def validate(self):
+		if self.portal_request and self.portal_status == "Rejected":
+			return
 		validate_active_employee(self.employee)
 		validate_dates(self, self.work_from_date, self.work_end_date)
 		if self.half_day:
@@ -27,7 +54,12 @@ class CompensatoryLeaveRequest(Document):
 				frappe.throw(_("Half Day Date is mandatory"))
 			if not getdate(self.work_from_date) <= getdate(self.half_day_date) <= getdate(self.work_end_date):
 				frappe.throw(_("Half Day Date should be in between Work From Date and Work End Date"))
-		validate_overlap(self, self.work_from_date, self.work_end_date)
+		if self.portal_request:
+			from hrms.api.comp_off import validate_portal_request
+
+			validate_portal_request(self)
+		else:
+			validate_overlap(self, self.work_from_date, self.work_end_date)
 		self.validate_holidays()
 		self.validate_attendance()
 		if not self.leave_type:
