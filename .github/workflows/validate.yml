@@ -1,0 +1,55 @@
+name: Validate Atlas HR portal
+on:
+  push:
+    branches: ['codex/comp-off-self-service']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: comp-off-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mysql:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports: ['3306:3306']
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Compile and lint changed backend
+        run: |
+          pip install ruff frappe-bench
+          python -m compileall -q hrms/api/comp_off.py hrms/api/test_comp_off.py
+          ruff check hrms/api/comp_off.py hrms/api/test_comp_off.py hrms/www/hrms.py
+      - name: Build portal with locked dependencies
+        run: |
+          npm install -g yarn
+          cd frontend
+          yarn install --frozen-lockfile
+          yarn build
+      - name: Install exact framework and ERPNext bases
+        run: bash .github/helper/install-comp-off-test.sh
+      - name: Run native security and ledger tests
+        run: |
+          cd ~/frappe-bench
+          bench --site test_site run-tests --app hrms --module hrms.api.test_comp_off
+          bench --site test_site run-tests --app hrms --module hrms.hr.doctype.compensatory_leave_request.test_compensatory_leave_request
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-test-logs
+          path: |
+            /home/runner/frappe-bench/logs/
+            /home/runner/frappe-bench/sites/test_site/logs/

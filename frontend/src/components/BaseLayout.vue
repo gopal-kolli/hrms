@@ -1,7 +1,7 @@
 <template>
 	<ion-page>
 		<ion-header class="ion-no-border">
-			<div class="w-full sm:w-96">
+			<div class="w-full max-w-3xl mx-auto">
 				<div class="flex flex-col bg-white shadow-sm p-4">
 					<div class="flex flex-row justify-between items-center">
 						<div class="flex flex-row items-center gap-2">
@@ -24,15 +24,8 @@
 									</span>
 								</span>
 							</router-link>
-							<router-link
-								:to="{ name: 'Profile' }"
-								class="flex flex-col items-center"
-							>
-								<Avatar
-									:image="user.data.user_image"
-									:label="user.data.first_name"
-									size="xl"
-								/>
+							<router-link :to="{ name: 'Profile' }" class="flex flex-col items-center">
+								<Avatar :image="user.data.user_image" :label="user.data.first_name" size="xl" />
 							</router-link>
 						</div>
 					</div>
@@ -41,7 +34,7 @@
 		</ion-header>
 
 		<ion-content class="ion-no-padding">
-			<div class="flex flex-col h-screen w-screen sm:w-96">
+			<div class="flex flex-col min-h-full w-full max-w-3xl mx-auto">
 				<slot name="body"></slot>
 			</div>
 		</ion-content>

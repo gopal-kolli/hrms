@@ -1,5 +1,6 @@
 import frappe
 from frappe.boot import load_translations
+from frappe.utils import cint
 
 no_cache = 1
 
@@ -25,6 +26,7 @@ def get_boot():
 	bootinfo = frappe._dict(
 		{
 			"site_name": frappe.local.site,
+			"comp_off_self_service": bool(cint(frappe.conf.get("enable_comp_off_self_service"))),
 			"socketio_port": frappe.conf.get("socketio_port") or 9000,
 			"push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
 			"default_route": get_default_route(),

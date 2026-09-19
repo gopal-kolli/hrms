@@ -397,3 +397,11 @@ employee_holiday_list = ["hrms.utils.holiday_list.get_holiday_list_for_employee"
 export_python_type_annotations = True
 require_type_annotated_api_methods = True
 repost_allowed_doctypes = ["Expense Claim"]
+
+# Employee portal comp-off requests remain private even if the feature is disabled.
+permission_query_conditions = {
+	"Compensatory Leave Request": "hrms.api.comp_off.get_permission_query_conditions",
+}
+has_permission = {
+	"Compensatory Leave Request": "hrms.api.comp_off.has_permission",
+}
