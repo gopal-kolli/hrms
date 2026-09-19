@@ -1,5 +1,8 @@
 """Native Frappe integration coverage for the optional employee credit workflow."""
 
+import os
+from unittest import skipUnless
+
 import frappe
 from frappe.utils import add_days, getdate, today
 
@@ -208,21 +211,27 @@ class TestCompOffPortal(HRMSTestSuite):
 		with self.assertRaises(frappe.ValidationError):
 			self.create()
 
+	@skipUnless(
+		os.environ.get("GITHUB_ACTIONS") == "true"
+		and os.environ.get("HRMS_CONCURRENCY_ACCEPTANCE") == "1",
+		"Separate CI-only concurrent transaction acceptance",
+	)
+	def test_concurrent_requests_and_approvals_are_exactly_once(self):
+		result = _run_concurrency_acceptance(self)
+		self.assertEqual(result["result"], "PASS")
 
-def run_concurrency_acceptance():
+
+def _run_concurrency_acceptance(case):
 	"""Four independent DB connections; ONLY the disposable GitHub CI test site.
 
 	Fixtures intentionally commit so real competing transactions can see them.
 	The entire CI database is ephemeral; never run this on a Cloud site.
 	"""
-	import os
 	from concurrent.futures import ThreadPoolExecutor
 	from threading import Barrier
 
 	if frappe.local.site != "test_site" or os.environ.get("GITHUB_ACTIONS") != "true":
 		raise RuntimeError("Concurrency fixture is restricted to disposable GitHub CI")
-	case = TestCompOffPortal("test_credit_and_retry_are_exactly_once")
-	case.setUp()
 	frappe.db.commit()  # nosemgrep: disposable CI fixture visibility between connections
 	site = frappe.local.site
 	sites_path = frappe.local.sites_path
@@ -236,6 +245,7 @@ def run_concurrency_acceptance():
 			frappe.init(site=site, sites_path=sites_path)
 			frappe.connect()
 			try:
+				frappe.flags.in_test = True
 				frappe.conf.enable_comp_off_self_service = 1
 				frappe.set_user(employee_user if task[0] == "create" else manager_user)
 				barrier.wait(timeout=30)
