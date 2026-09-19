@@ -46,6 +46,7 @@ jobs:
           cd ~/frappe-bench
           bench --site test_site run-tests --app hrms --module hrms.api.test_comp_off
           bench --site test_site run-tests --app hrms --module hrms.hr.doctype.compensatory_leave_request.test_compensatory_leave_request
+          bench --site test_site execute hrms.api.test_comp_off.run_concurrency_acceptance
       - uses: actions/upload-artifact@v4
         if: always()
         with:

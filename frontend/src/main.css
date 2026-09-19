@@ -406,4 +406,7 @@ body {
 	}
 }
 
-.comp-off-intro > a { flex-shrink: 0; white-space: nowrap; }
+.comp-off-intro > a {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
