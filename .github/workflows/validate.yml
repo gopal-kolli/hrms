@@ -31,8 +31,8 @@ jobs:
       - name: Compile and lint changed backend
         run: |
           pip install ruff frappe-bench
-          python -m compileall -q hrms/api/comp_off.py hrms/api/test_comp_off.py
-          ruff check hrms/api/comp_off.py hrms/api/test_comp_off.py hrms/www/hrms.py
+          python -m compileall -q hrms/api/comp_off.py hrms/api/comp_off_recovery.py hrms/api/test_comp_off.py
+          ruff check hrms/api/comp_off.py hrms/api/comp_off_recovery.py hrms/api/test_comp_off.py hrms/www/hrms.py
       - name: Build portal with locked dependencies
         run: |
           npm install -g yarn
