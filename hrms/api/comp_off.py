@@ -2,7 +2,7 @@
 
 Enable with enable_comp_off_self_service after migration and verified TEST evidence.
 The API never accepts an employee, approver, leave type, credit amount or status from
-an employee. Native REST/Desk mutations are blocked while enabled, and portal
+an employee. Employee REST/Desk mutations are blocked while enabled, and portal
 records stay protected when the site flag is switched off. No email is sent.
 """
 
@@ -12,6 +12,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime, today
 
+from hrms.api.comp_off_recovery import reverse_unused_portal_credit
 from hrms.hr.utils import get_holiday_dates_for_employee, get_leave_period
 
 DOCTYPE = "Compensatory Leave Request"
@@ -112,14 +113,26 @@ def _operation(doc, action):
 		frappe.local.comp_off_operation = previous
 
 
+def _native_hr_user(user=None):
+	user = user or frappe.session.user
+	return user == "Administrator" or bool(
+		frappe.db.get_value("User", user, "enabled")
+		and set(frappe.get_roles(user)) & {"HR Manager", "HR User", "System Manager"}
+	)
+
+
 def guard_write(doc):
 	stored = None
 	if not doc.is_new():
 		stored = frappe.db.get_value(DOCTYPE, doc.name, "portal_request")
-	if not (enabled() or doc.get("portal_request") or stored):
+	if not (doc.get("portal_request") or stored) and (not enabled() or _native_hr_user()):
 		return
 	operation = getattr(frappe.local, "comp_off_operation", None)
-	if not operation or operation[0] is not doc or operation[1] not in ("create", "approve", "reject"):
+	if (
+		not operation
+		or operation[0] is not doc
+		or operation[1] not in ("create", "approve", "reject", "recover")
+	):
 		frappe.throw(
 			_("Use the employee portal to request or review comp-off credit."), frappe.PermissionError
 		)
@@ -164,6 +177,8 @@ def validate_portal_request(doc):
 def _result(doc):
 	result = {key: doc.get(key) for key in FIELDS}
 	result["status"] = result.pop("portal_status") or ("Approved" if doc.docstatus == 1 else "Pending")
+	if doc.docstatus == 2:
+		result["status"] = "Cancelled"
 	result["can_approve"] = bool(
 		doc.docstatus == 0 and result["status"] == "Pending" and _can_approve(_employee_by_name(doc.employee))
 	)
@@ -404,7 +419,8 @@ def get_permission_query_conditions(user=None):
 
 
 def has_permission(doc, ptype=None, user=None, debug=False):
-	if not enabled() and not doc.get("portal_request"):
+	stored = frappe.db.get_value(DOCTYPE, doc.name, "portal_request") if not doc.is_new() else None
+	if not (doc.get("portal_request") or stored) and (not enabled() or _native_hr_user(user)):
 		return True
 	user = user or frappe.session.user
 	if ptype not in ("read", "select", "print", "email"):

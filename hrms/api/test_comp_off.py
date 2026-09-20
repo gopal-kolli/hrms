@@ -2,8 +2,10 @@
 
 import os
 from unittest import skipUnless
+from unittest.mock import patch
 
 import frappe
+from frappe.model.document import Document
 from frappe.utils import add_days, getdate, today
 
 from hrms.api import comp_off
@@ -23,6 +25,8 @@ class TestCompOffPortal(HRMSTestSuite):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.previous_flag = frappe.conf.get("enable_comp_off_self_service")
+		self.previous_maintenance = frappe.conf.get("maintenance_mode")
+		self.previous_scheduler = frappe.conf.get("pause_scheduler")
 		frappe.conf.enable_comp_off_self_service = 1
 		self.addCleanup(self.cleanup)
 		for key in ("employee", "manager", "other"):
@@ -62,6 +66,8 @@ class TestCompOffPortal(HRMSTestSuite):
 	def cleanup(self):
 		frappe.set_user("Administrator")
 		frappe.conf.enable_comp_off_self_service = self.previous_flag
+		frappe.conf.maintenance_mode = self.previous_maintenance
+		frappe.conf.pause_scheduler = self.previous_scheduler
 		frappe.local.comp_off_operation = None
 
 	def create(self, date=None, **kwargs):
@@ -70,6 +76,48 @@ class TestCompOffPortal(HRMSTestSuite):
 	def approve(self, request):
 		frappe.set_user(self.manager.user_id)
 		return comp_off.decide_request(request["name"], "Approved")
+
+	def enable_recovery_controls(self):
+		frappe.set_user("Administrator")
+		frappe.conf.maintenance_mode = 1
+		frappe.conf.pause_scheduler = 1
+
+	def approved_credit(self, half_day=False):
+		if half_day:
+			frappe.set_user("Administrator")
+			frappe.db.set_value(
+				"Attendance",
+				{"employee": self.employee.name, "attendance_date": today()},
+				{"status": "Half Day", "half_day_status": "Absent"},
+			)
+			frappe.set_user(self.employee.user_id)
+		request = self.create(half_day=half_day)
+		return request, self.approve(request)
+
+	def recovery_snapshot(self, request):
+		allocation = frappe.get_doc("Leave Allocation", request["leave_allocation"])
+		return {
+			"docstatus": frappe.db.get_value(comp_off.DOCTYPE, request["name"], "docstatus"),
+			"allocation_total": allocation.total_leaves_allocated,
+			"ledger_count": frappe.db.count(
+				"Leave Ledger Entry", {"transaction_name": allocation.name, "docstatus": 1}
+			),
+			"ledger_sum": sum(
+				frappe.get_all(
+					"Leave Ledger Entry",
+					filters={"transaction_name": allocation.name, "docstatus": 1},
+					pluck="leaves",
+				)
+			),
+			"comments": frappe.db.count(
+				"Comment",
+				{
+					"reference_doctype": comp_off.DOCTYPE,
+					"reference_name": request["name"],
+					"content": ["like", "%comp_off_recovery_v1%"],
+				},
+			),
+		}
 
 	def test_credit_and_retry_are_exactly_once(self):
 		request = self.create()
@@ -120,6 +168,19 @@ class TestCompOffPortal(HRMSTestSuite):
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc(comp_off.DOCTYPE, request["name"], ignore_permissions=True)
 
+	def test_enabled_native_hr_compatibility_keeps_portal_records_protected(self):
+		native_doc = frappe.new_doc(comp_off.DOCTYPE)
+		self.assertTrue(comp_off.has_permission(native_doc, ptype="write", user="Administrator", debug=False))
+		self.assertFalse(
+			comp_off.has_permission(native_doc, ptype="write", user=self.employee.user_id, debug=False)
+		)
+		request = self.create()
+		portal_doc = frappe.get_doc(comp_off.DOCTYPE, request["name"])
+		self.assertFalse(
+			comp_off.has_permission(portal_doc, ptype="write", user="Administrator", debug=False)
+		)
+		self.assertNotIn(comp_off.reverse_unused_portal_credit, frappe.whitelisted)
+
 	def test_rejection_has_no_credit_and_can_be_reapplied(self):
 		request = self.create()
 		frappe.set_user(self.manager.user_id)
@@ -135,6 +196,148 @@ class TestCompOffPortal(HRMSTestSuite):
 			comp_off.decide_request(request["name"], "Approved")
 		frappe.set_user(self.employee.user_id)
 		self.assertNotEqual(self.create()["name"], rejected["name"])
+
+	def test_recovery_cancels_a_clean_full_day_credit_once_with_audit(self):
+		request, approved = self.approved_credit()
+		self.enable_recovery_controls()
+		before = self.recovery_snapshot(approved)
+
+		recovered = comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+		self.assertEqual(
+			recovered,
+			{
+				"name": request["name"],
+				"status": "Cancelled",
+				"leave_allocation": approved["leave_allocation"],
+			},
+		)
+		doc = frappe.get_doc(comp_off.DOCTYPE, request["name"])
+		allocation = frappe.get_doc("Leave Allocation", approved["leave_allocation"])
+		self.assertEqual((doc.docstatus, doc.portal_status), (2, "Approved"))
+		self.assertEqual(allocation.total_leaves_allocated, 0)
+		after = self.recovery_snapshot(approved)
+		self.assertEqual(after["ledger_count"], before["ledger_count"] + 1)
+		self.assertEqual(after["ledger_sum"], 0)
+		self.assertEqual(after["comments"], before["comments"] + 1)
+		self.assertEqual(
+			frappe.get_value(
+				"Leave Ledger Entry",
+				{"transaction_name": allocation.name, "leaves": -1, "docstatus": 1},
+				["from_date", "to_date"],
+				as_dict=True,
+			),
+			frappe._dict(
+				{"from_date": getdate(add_days(today(), 1)), "to_date": getdate(allocation.to_date)}
+			),
+		)
+		self.assertEqual(
+			comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval"), recovered
+		)
+		self.assertEqual(self.recovery_snapshot(approved), after)
+
+	def test_recovery_cancels_a_clean_half_day_credit(self):
+		request, approved = self.approved_credit(half_day=True)
+		self.enable_recovery_controls()
+		recovered = comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+		allocation = frappe.get_doc("Leave Allocation", approved["leave_allocation"])
+		self.assertEqual(recovered["status"], "Cancelled")
+		self.assertEqual(allocation.total_leaves_allocated, 0)
+		self.assertEqual(
+			frappe.db.get_value(
+				"Leave Ledger Entry", {"transaction_name": allocation.name, "leaves": -0.5}, "leaves"
+			),
+			-0.5,
+		)
+
+	def test_recovery_requires_authorised_user_reason_and_operational_controls(self):
+		request, approved = self.approved_credit()
+		before = self.recovery_snapshot(approved)
+		frappe.set_user(self.manager.user_id)
+		frappe.conf.maintenance_mode = 1
+		frappe.conf.pause_scheduler = 1
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+		self.enable_recovery_controls()
+		with self.assertRaises(frappe.ValidationError):
+			comp_off.reverse_unused_portal_credit(request["name"], "")
+		frappe.conf.maintenance_mode = 0
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+		frappe.conf.maintenance_mode = 1
+		frappe.conf.pause_scheduler = 0
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+		self.assertEqual(self.recovery_snapshot(approved), before)
+
+	def test_recovery_refuses_pending_or_approved_leave_use_without_mutation(self):
+		request, approved = self.approved_credit()
+		self.enable_recovery_controls()
+		allocation = frappe.get_doc("Leave Allocation", approved["leave_allocation"])
+		for status, submit in (("Open", False), ("Approved", True)):
+			application = frappe.get_doc(
+				{
+					"doctype": "Leave Application",
+					"employee": self.employee.name,
+					"leave_type": comp_off.LEAVE_TYPE,
+					"from_date": allocation.from_date,
+					"to_date": allocation.from_date,
+					"company": self.employee.company,
+					"status": status,
+					"leave_approver": "Administrator",
+				}
+			).insert()
+			if submit:
+				application.submit()
+			before = self.recovery_snapshot(approved)
+			with self.subTest(status=status), self.assertRaises(frappe.ValidationError):
+				comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+			self.assertEqual(self.recovery_snapshot(approved), before)
+			if submit:
+				application.cancel()
+			else:
+				frappe.delete_doc("Leave Application", application.name)
+
+	def test_recovery_refuses_negative_ledger_or_carry_forward_allocation_without_mutation(self):
+		request, approved = self.approved_credit()
+		self.enable_recovery_controls()
+		before = self.recovery_snapshot(approved)
+		allocation = frappe.get_doc("Leave Allocation", approved["leave_allocation"])
+		frappe.db.savepoint("negative_ledger_fixture")
+		negative_entry = frappe.get_doc(
+			{
+				"doctype": "Leave Ledger Entry",
+				"employee": self.employee.name,
+				"leave_type": comp_off.LEAVE_TYPE,
+				"transaction_type": "Leave Allocation",
+				"transaction_name": allocation.name,
+				"leaves": -0.5,
+				"from_date": allocation.from_date,
+				"to_date": allocation.to_date,
+				"company": self.employee.company,
+			}
+		).insert()
+		negative_entry.submit()
+		with self.assertRaises(frappe.ValidationError):
+			comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+		self.assertEqual(
+			self.recovery_snapshot(approved),
+			before | {"ledger_count": before["ledger_count"] + 1, "ledger_sum": before["ledger_sum"] - 0.5},
+		)
+		frappe.db.rollback(save_point="negative_ledger_fixture")
+		frappe.db.set_value("Leave Allocation", allocation.name, "carry_forward", 1)
+		before_carry_forward = self.recovery_snapshot(approved)
+		with self.assertRaises(frappe.ValidationError):
+			comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+		self.assertEqual(self.recovery_snapshot(approved), before_carry_forward)
+
+	def test_recovery_rolls_back_when_audit_comment_fails(self):
+		request, approved = self.approved_credit()
+		self.enable_recovery_controls()
+		before = self.recovery_snapshot(approved)
+		with patch.object(Document, "add_comment", side_effect=RuntimeError("audit write failed")):
+			with self.assertRaisesRegex(RuntimeError, "audit write failed"):
+				comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
+		self.assertEqual(self.recovery_snapshot(approved), before)
 
 	def test_full_day_cannot_be_requested_from_half_day_attendance(self):
 		frappe.set_user("Administrator")
@@ -212,8 +415,7 @@ class TestCompOffPortal(HRMSTestSuite):
 			self.create()
 
 	@skipUnless(
-		os.environ.get("GITHUB_ACTIONS") == "true"
-		and os.environ.get("HRMS_CONCURRENCY_ACCEPTANCE") == "1",
+		os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("HRMS_CONCURRENCY_ACCEPTANCE") == "1",
 		"Separate CI-only concurrent transaction acceptance",
 	)
 	def test_concurrent_requests_and_approvals_are_exactly_once(self):
