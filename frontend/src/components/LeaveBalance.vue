@@ -39,7 +39,7 @@
 			>
 				<FeatherIcon :name="balanceIcon(leaveType)" class="balance-icon" aria-hidden="true" />
 				<p class="leave-balance-name" :title="__(leaveType, null, 'Leave Type')">
-					{{ __(leaveType, null, "Leave Type") }}
+					{{ balanceLabel(leaveType) }}
 				</p>
 				<p class="leave-balance-value">
 					{{ allocation.balance_leaves }}
@@ -63,6 +63,8 @@ import { computed, inject } from "vue"
 import { leaveBalance } from "@/data/leaves"
 
 const __ = inject("$translate")
+const balanceLabel = (type) =>
+	/compensatory off/i.test(type) ? __("Comp off") : __(type, null, "Leave Type")
 const balanceIcon = (type) =>
 	/sick/i.test(type) ? "heart" : /compensatory|comp off/i.test(type) ? "clock" : "calendar"
 const balanceEntries = computed(() => Object.entries(leaveBalance.data || {}))

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-19T00:00:00+05:30",
+  "generatedAt": "2026-09-20T00:00:00+05:30",
   "title": "Design System: SOLARA Atlas Employee Portal",
   "extensions": {
     "colorMeta": {
@@ -40,25 +40,25 @@
       "name": "Primary Action",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Filled action for requesting leave or submitting a Comp Off decision.",
+      "description": "Filled action for requesting leave or submitting a Comp Off decision; home actions reduce to 48px minimum height at mobile widths.",
       "html": "<button class=\"ds-btn-primary\">Request leave</button>",
-      "css": ".ds-btn-primary { min-height: 46px; padding: 10px 18px; border: 0; border-radius: 10px; background: #006b64; color: #ffffff; box-shadow: 0 8px 16px rgba(0, 107, 100, 0.18); font: 730 0.94rem InterVar, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: transform 0.16s ease, background 0.16s ease; } .ds-btn-primary:hover { background: #00544f; transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: 3px solid #0b8178; outline-offset: 3px; } .ds-btn-primary:active { transform: translateY(0); } .ds-btn-primary:disabled { background: #d3e4e1; color: #486660; cursor: not-allowed; }"
+      "css": ".ds-btn-primary { min-height: 46px; padding: 10px 18px; border: 0; border-radius: 10px; background: #006b64; color: #ffffff; box-shadow: 0 8px 16px rgba(0, 107, 100, 0.18); font: 730 0.94rem InterVar, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: transform 0.16s ease, background 0.16s ease; } .ds-btn-primary:hover { background: #00544f; transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: 3px solid #0b8178; outline-offset: 3px; } .ds-btn-primary:active { transform: translateY(0); } .ds-btn-primary:disabled { background: #d3e4e1; color: #486660; cursor: not-allowed; } @media (max-width: 640px) { .ds-btn-primary { min-height: 48px; padding: 6px; font-size: 0.76rem; line-height: 1.25; text-align: center; } }"
     },
     {
       "name": "Secondary Leave Action",
       "kind": "button",
       "refersTo": "button-secondary",
-      "description": "Outlined action for requesting earned Comp Off credit.",
+      "description": "Outlined action for requesting earned Comp Off credit; it pairs with the leave action at mobile widths.",
       "html": "<button class=\"ds-btn-secondary\">Request Comp Off credit</button>",
-      "css": ".ds-btn-secondary { min-height: 50px; padding: 10px 18px; border: 1px solid #006b64; border-radius: 10px; background: #ffffff; color: #006b64; font: 730 0.94rem InterVar, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: transform 0.16s ease, background 0.16s ease; } .ds-btn-secondary:hover { background: #eaf4f2; transform: translateY(-1px); } .ds-btn-secondary:focus-visible { outline: 3px solid #0b8178; outline-offset: 3px; } .ds-btn-secondary:active { transform: translateY(0); }"
+      "css": ".ds-btn-secondary { min-height: 50px; padding: 10px 18px; border: 1px solid #006b64; border-radius: 10px; background: #ffffff; color: #006b64; font: 730 0.94rem InterVar, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: transform 0.16s ease, background 0.16s ease; } .ds-btn-secondary:hover { background: #eaf4f2; transform: translateY(-1px); } .ds-btn-secondary:focus-visible { outline: 3px solid #0b8178; outline-offset: 3px; } .ds-btn-secondary:active { transform: translateY(0); } @media (max-width: 640px) { .ds-btn-secondary { min-height: 48px; padding: 6px; font-size: 0.76rem; line-height: 1.25; text-align: center; } }"
     },
     {
       "name": "Leave Balance Tile",
       "kind": "card",
       "refersTo": "card",
-      "description": "Numeric-first leave balance inside the white workspace.",
+      "description": "Numeric-first leave balance inside the white workspace, compacted horizontally without dropping allocation context on mobile.",
       "html": "<section class=\"ds-balance-tile\"><svg class=\"ds-balance-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\"></rect><path d=\"M16 2v4M8 2v4M3 10h18\"></path></svg><p class=\"ds-balance-name\">Casual leave</p><p class=\"ds-balance-value\">4 <span>days</span></p><p class=\"ds-balance-detail\">12 allocated</p></section>",
-      "css": ".ds-balance-tile { padding: 18px; border: 1px solid #c9deda; border-radius: 12px; background: #ffffff; color: #172f35; font-family: InterVar, ui-sans-serif, system-ui, sans-serif; } .ds-balance-icon { display: block; width: 24px; height: 24px; margin-bottom: 12px; color: #006b64; } .ds-balance-name { margin: 0; color: #172f35; font-size: 0.88rem; } .ds-balance-value { margin: 10px 0 5px; font-size: 2rem; font-weight: 780; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; } .ds-balance-value span { color: #547076; font-size: 0.88rem; font-weight: 500; letter-spacing: 0; } .ds-balance-detail { margin: 0; color: #547076; font-size: 0.78rem; }"
+      "css": ".ds-balance-tile { padding: 18px; border: 1px solid #c9deda; border-radius: 12px; background: #ffffff; color: #172f35; font-family: InterVar, ui-sans-serif, system-ui, sans-serif; } .ds-balance-icon { display: block; width: 24px; height: 24px; margin-bottom: 12px; color: #006b64; } .ds-balance-name { margin: 0; color: #172f35; font-size: 0.88rem; } .ds-balance-value { margin: 10px 0 5px; font-size: 2rem; font-weight: 780; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; } .ds-balance-value span { color: #547076; font-size: 0.88rem; font-weight: 500; letter-spacing: 0; } .ds-balance-detail { margin: 0; color: #547076; font-size: 0.78rem; } @media (max-width: 640px) { .ds-balance-tile { display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 8px; align-items: center; padding: 9px 8px; border-radius: 8px; } .ds-balance-icon { grid-column: 1; grid-row: 1 / 4; width: 28px; height: 28px; margin: 0; padding: 4px; border-radius: 50%; background: #eaf4f2; } .ds-balance-name { grid-column: 2; font-size: 0.72rem; line-height: 1.2; } .ds-balance-value { grid-column: 2; margin: 3px 0 2px; font-size: 1.45rem; } .ds-balance-value span { font-size: 0.72rem; } .ds-balance-detail { grid-column: 2; font-size: 0.64rem; } }"
     },
     {
       "name": "Request Status",
@@ -82,19 +82,35 @@
       "refersTo": "card",
       "description": "Persistent five-destination portal navigation with a teal active state.",
       "html": "<nav class=\"ds-tabs\" aria-label=\"Portal navigation\"><a class=\"ds-tab ds-tab-active\" href=\"#home\">Home</a><a class=\"ds-tab\" href=\"#attendance\">Attendance</a><a class=\"ds-tab\" href=\"#leave\">Leaves</a><a class=\"ds-tab\" href=\"#expenses\">Expenses</a><a class=\"ds-tab\" href=\"#salary\">Salary</a></nav>",
-      "css": ".ds-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); min-height: 70px; padding: 7px 12px; border-top: 1px solid #c9deda; background: #ffffff; font-family: InterVar, ui-sans-serif, system-ui, sans-serif; } .ds-tab { display: grid; place-items: center; color: #547076; font-size: 0.72rem; text-decoration: none; } .ds-tab:hover { color: #006b64; } .ds-tab:focus-visible { outline: 3px solid #0b8178; outline-offset: -3px; } .ds-tab-active { color: #006b64; font-weight: 720; box-shadow: inset 0 -2px #006b64; }"
+      "css": ".ds-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); min-height: 70px; padding: 7px 12px; border-top: 1px solid #c9deda; background: #ffffff; font-family: InterVar, ui-sans-serif, system-ui, sans-serif; } .ds-tab { display: grid; place-items: center; color: #547076; font-size: 0.72rem; text-decoration: none; } .ds-tab:hover { color: #006b64; } .ds-tab:focus-visible { outline: 3px solid #0b8178; outline-offset: -3px; } .ds-tab-active { color: #006b64; font-weight: 720; box-shadow: inset 0 -2px #006b64; } @media (max-width: 640px) { .ds-tabs { min-height: 60px; } }"
+    },
+    {
+      "name": "Mobile Request Summary",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The latest leave and Comp Off records combined from their existing APIs, with history and eligible-manager links.",
+      "html": "<section class=\"ds-mobile-requests\"><strong>Your requests</strong><a class=\"ds-request-row\" href=\"#request\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><path d=\"M12 7v5l3 2\"></path></svg><span><b>Comp Off credit</b><small>13 Sep · 1 day</small></span><em>Pending</em></a><nav><a href=\"#leave-history\">Leave history</a><a href=\"#comp-off-history\">Comp-off history</a></nav></section>",
+      "css": ".ds-mobile-requests { padding: 12px; border-radius: 14px; background: #ffffff; box-shadow: 0 10px 24px rgba(0, 77, 70, 0.08); color: #172f35; font-family: InterVar, ui-sans-serif, system-ui, sans-serif; } .ds-request-row { display: flex; align-items: center; gap: 10px; min-height: 48px; color: #172f35; text-decoration: none; } .ds-request-row svg { width: 28px; height: 28px; color: #006b64; } .ds-request-row span { flex: 1; } .ds-request-row b, .ds-request-row small { display: block; } .ds-request-row b { font-size: 0.8rem; } .ds-request-row small { margin-top: 2px; color: #547076; font-size: 0.72rem; } .ds-request-row em { padding: 4px 8px; border-radius: 999px; background: #fff4d2; color: #805b00; font: 760 0.7rem/1.2 InterVar, ui-sans-serif, system-ui, sans-serif; font-style: normal; } .ds-mobile-requests nav { display: flex; justify-content: space-between; gap: 8px; } .ds-mobile-requests nav a { display: flex; align-items: center; min-height: 44px; color: #006b64; font-size: 0.73rem; font-weight: 650; text-decoration: none; } .ds-mobile-requests a:focus-visible { outline: 3px solid #0b8178; outline-offset: 3px; }"
+    },
+    {
+      "name": "Mobile Service Grid",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Three core services across the mobile grid; remaining existing services expand through the More services disclosure.",
+      "html": "<section class=\"ds-services\"><div class=\"ds-service-grid\"><a href=\"#attendance\">Attendance</a><a href=\"#expenses\">Expenses</a><a href=\"#salary\">Salary slips</a></div><button class=\"ds-more\">More services</button></section>",
+      "css": ".ds-services { padding: 12px; border-radius: 14px; background: #ffffff; box-shadow: 0 10px 24px rgba(0, 77, 70, 0.08); font-family: InterVar, ui-sans-serif, system-ui, sans-serif; } .ds-service-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; } .ds-service-grid a { display: flex; align-items: center; justify-content: center; min-height: 56px; color: #172f35; font-size: 0.72rem; text-align: center; text-decoration: none; } .ds-more { display: flex; align-items: center; min-height: 44px; border: 0; background: transparent; color: #006b64; font: 650 0.78rem InterVar, ui-sans-serif, system-ui, sans-serif; cursor: pointer; } .ds-service-grid a:focus-visible, .ds-more:focus-visible { outline: 3px solid #0b8178; outline-offset: 3px; }"
     }
   ],
   "narrative": {
     "northStar": "The Modern HR Workspace",
-    "overview": "SOLARA Atlas is a calm operating surface built around the employee's available leave and next action. A deep teal header and actions establish the working context; a pale teal ground and white, lightly lifted panels keep data readable without decorative imagery. The system uses its existing InterVar sans stack, strong dark-ink hierarchy, fine teal rules, and compact line icons. The approved green composition is direction and layout reference only. Previews use synthetic fixture data; implementation always renders live portal data and never copies fixture values or raster content.",
+    "overview": "SOLARA Atlas is a calm operating surface built around the employee's available leave and next action. A deep teal header and actions establish the working context; a pale teal ground and white, lightly lifted panels keep data readable without decorative imagery. At mobile widths, the system becomes denser without hiding leave allocation or splitting request data: horizontal balance cells retain their allocation lines, paired actions remain 48px targets, and the latest leave and Comp Off records appear in one summary from their existing APIs. Previews use synthetic fixture data; implementation always renders live portal data and never copies fixture values or raster content.",
     "keyCharacteristics": ["Deep teal is reserved for portal chrome, primary action, active navigation, and purposeful links.", "White panels group real work; fine rules and modest ambient shadow separate them from the pale ground.", "Leave, earned Comp Off credit, request status, and manager responsibility stay explicit.", "No separate logo symbol, imagery, charts, gradients, or decorative illustration are part of this system."],
     "rules": [
       { "name": "The Teal Has a Job Rule", "body": "Use #006b64 for navigation, a primary action, or an intentional link; do not spread it across passive panel fill or routine body text.", "section": "colors" },
       { "name": "The Numbers Read First Rule", "body": "Use tabular numerals and the heavier balance-value treatment for leave amounts; keep allocation and date detail muted and smaller.", "section": "typography" },
       { "name": "The Quiet Lift Rule", "body": "Apply the ambient panel shadow once to a surface; nested content stays flat or uses a fine rule.", "section": "elevation" }
     ],
-    "dos": ["Do use the implemented #006b64, #eaf4f2, white, and #172f35 portal palette for home and Comp Off surfaces.", "Do preserve real employee data, real request status, feature gates, and existing service routes; label all preview fixtures as synthetic.", "Do retain the 640px mobile stacking behavior and the 46px minimum primary-action target.", "Do use existing line icons and text brand treatment without adding a new logo symbol."],
+    "dos": ["Do use the implemented #006b64, #eaf4f2, white, and #172f35 portal palette for home and Comp Off surfaces.", "Do preserve real employee data, real request status, feature gates, and existing service routes; label all preview fixtures as synthetic.", "Do retain the 640px dense mobile layout: horizontal balance cells with allocation lines, paired 48px home actions, 44px request links, and the core-services disclosure.", "Do use existing line icons and text brand treatment without adding a new logo symbol."],
     "donts": ["Don't copy raster comp text, balances, dates, counts, avatars, or other preview fixtures into the implementation.", "Don't add decorative imagery, fake charts, gradients, or a new logo symbol.", "Don't use the stale default Ionic gray/blue theme for these portal surfaces when the implemented portal tokens provide the relevant surface."]
   }
 }

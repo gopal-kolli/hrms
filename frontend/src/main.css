@@ -1207,3 +1207,209 @@ ion-content {
 		margin-bottom: 24px;
 	}
 }
+
+/* Compact mobile composition from the approved green concept. */
+.mobile-requests,
+.more-services-toggle {
+	display: none;
+}
+@media (max-width: 640px) {
+	.home-page {
+		padding: 16px 12px 24px;
+	}
+	.home-intro {
+		margin-bottom: 16px;
+	}
+	.home-intro h1 {
+		font-size: 2rem;
+	}
+	.home-intro > div > p {
+		margin-top: 6px;
+		font-size: 0.8rem;
+	}
+	.leave-workspace {
+		padding: 12px;
+	}
+	.leave-workspace .leave-balances-head {
+		padding-bottom: 10px;
+	}
+	.leave-balances h2 {
+		font-size: 1rem;
+	}
+	.leave-workspace .leave-balance-grid {
+		gap: 8px;
+	}
+	.leave-workspace .leave-balance-cell {
+		display: grid;
+		grid-template-columns: 30px minmax(0, 1fr);
+		column-gap: 8px;
+		align-items: center;
+		padding: 9px 8px;
+		border-radius: 8px;
+	}
+	.leave-workspace .balance-icon {
+		grid-column: 1;
+		grid-row: 1 / 4;
+		margin: 0;
+		width: 28px;
+		height: 28px;
+		padding: 4px;
+		border-radius: 50%;
+		background: var(--portal-teal-soft);
+	}
+	.leave-workspace .leave-balance-name {
+		grid-column: 2;
+		font-size: 0.72rem;
+		line-height: 1.2;
+	}
+	.leave-workspace .leave-balance-value {
+		grid-column: 2;
+		font-size: 1.45rem;
+		margin: 3px 0 2px;
+	}
+	.leave-workspace .leave-balance-value span {
+		font-size: 0.72rem;
+	}
+	.leave-workspace .leave-balance-allocation {
+		grid-column: 2;
+		font-size: 0.64rem;
+	}
+	.leave-actions {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 8px;
+		margin-top: 10px;
+	}
+	.leave-action {
+		min-height: 48px;
+		padding: 6px;
+		font-size: 0.76rem;
+		line-height: 1.25;
+		text-align: center;
+	}
+	.leave-action > svg {
+		display: none;
+	}
+	.leave-workspace .comp-off-hint {
+		margin-top: 10px;
+		padding: 8px;
+		font-size: 0.72rem;
+		line-height: 1.4;
+	}
+	.desktop-requests {
+		display: none;
+	}
+	.mobile-requests {
+		display: block;
+		margin-top: 12px;
+		padding: 12px;
+	}
+	.mobile-requests .section-heading {
+		margin-bottom: 2px;
+	}
+	.mobile-requests .request-row {
+		min-height: 48px;
+		padding: 8px 0;
+		gap: 10px;
+	}
+	.mobile-requests .request-row > div {
+		flex: 1;
+	}
+	.mobile-requests .request-icon {
+		width: 28px;
+		height: 28px;
+		color: var(--portal-teal);
+	}
+	.mobile-requests .request-row strong {
+		font-size: 0.8rem;
+	}
+	.mobile-requests .request-row div > span {
+		font-size: 0.72rem;
+		margin-top: 2px;
+	}
+	.mobile-requests .request-empty {
+		font-size: 0.72rem;
+		padding: 5px 0;
+	}
+	.request-history-links {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.request-history-links a {
+		display: flex;
+		align-items: center;
+		min-height: 44px;
+		font-size: 0.73rem;
+		color: var(--portal-teal);
+		font-weight: 650;
+	}
+	.mobile-requests .manager-queue {
+		margin: 0;
+		padding: 8px 0 0;
+		min-height: 44px;
+		font-size: 0.75rem;
+	}
+	.other-services {
+		margin-top: 12px;
+		padding: 12px;
+	}
+	.other-services h2 {
+		margin-bottom: 4px;
+	}
+	.service-links a {
+		min-height: 44px;
+		padding: 6px 0;
+		font-size: 0.8rem;
+	}
+	.service-links a.additional-service {
+		display: none;
+	}
+	.service-links a.service-expanded {
+		display: flex;
+	}
+	.more-services-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 44px;
+		color: var(--portal-teal);
+		font-size: 0.78rem;
+		font-weight: 650;
+	}
+	.portal-tabs {
+		min-height: 60px;
+	}
+}
+
+@media (max-width: 640px) {
+	.mobile-manager-link {
+		gap: 4px;
+	}
+	.mobile-manager-link svg {
+		display: none;
+	}
+	.other-services .service-links {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 4px;
+	}
+	.other-services .service-links a {
+		flex-direction: column;
+		justify-content: center;
+		gap: 5px;
+		min-height: 56px;
+		padding: 6px 0;
+		border: 0;
+		font-size: 0.72rem;
+	}
+	.other-services .service-links a > svg:last-child {
+		display: none;
+	}
+	.other-services .service-links a.additional-service {
+		grid-column: 1 / -1;
+		flex-direction: row;
+		justify-content: flex-start;
+		min-height: 44px;
+		border-top: 1px solid var(--portal-line);
+		font-size: 0.8rem;
+	}
+}
