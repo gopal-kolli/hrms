@@ -181,6 +181,40 @@ class TestCompOffPortal(HRMSTestSuite):
 		)
 		self.assertNotIn(comp_off.reverse_unused_portal_credit, frappe.whitelisted)
 
+	def test_native_hr_roles_keep_only_their_existing_document_permissions(self):
+		request = self.create()
+		portal_doc = frappe.get_doc(comp_off.DOCTYPE, request["name"])
+		for role in ("HR Manager", "HR User", "System Manager"):
+			frappe.set_user("Administrator")
+			email = f"comp-off-{role.lower().replace(' ', '-')}@example.com"
+			user = frappe.get_doc(
+				{
+					"doctype": "User",
+					"email": email,
+					"first_name": role,
+					"send_welcome_email": 0,
+					"roles": [{"role": role}],
+				}
+			).insert()
+			frappe.set_user(user.name)
+			native_doc = frappe.new_doc(comp_off.DOCTYPE)
+			with self.subTest(role=role):
+				comp_off.guard_write(native_doc)
+				for permission in ("create", "write", "submit", "cancel"):
+					frappe.conf.enable_comp_off_self_service = 0
+					before = frappe.has_permission(comp_off.DOCTYPE, permission, doc=native_doc)
+					frappe.conf.enable_comp_off_self_service = 1
+					self.assertEqual(
+						frappe.has_permission(comp_off.DOCTYPE, permission, doc=native_doc), before
+					)
+				self.assertTrue(frappe.has_permission(comp_off.DOCTYPE, "write", doc=native_doc))
+				self.assertFalse(comp_off.has_permission(portal_doc, ptype="write"))
+				with self.assertRaises(frappe.PermissionError):
+					comp_off.guard_write(portal_doc)
+		frappe.set_user(self.employee.user_id)
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.guard_write(frappe.new_doc(comp_off.DOCTYPE))
+
 	def test_rejection_has_no_credit_and_can_be_reapplied(self):
 		request = self.create()
 		frappe.set_user(self.manager.user_id)
