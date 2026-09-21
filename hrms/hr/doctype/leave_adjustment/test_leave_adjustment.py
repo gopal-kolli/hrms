@@ -34,6 +34,92 @@ class TestLeaveAdjustment(HRMSTestSuite):
 		)
 		self.assertRaises(frappe.ValidationError, duplicate_adjustment.save)
 
+	def test_adjustment_is_effective_only_from_posting_date(self):
+		posting_date = add_days(self.leave_allocation.from_date, 10)
+		prior_date = add_days(posting_date, -1)
+		for adjustment_type, amount, expected in [("Allocate", 2.75, 12.75), ("Reduce", 3.75, 6.25)]:
+			with self.subTest(adjustment_type=adjustment_type):
+				adjustment = create_leave_adjustment(
+					self.leave_allocation,
+					adjustment_type=adjustment_type,
+					leaves_to_adjust=amount,
+					posting_date=posting_date,
+				).submit()
+				for date, balance in [
+					(prior_date, 10),
+					(posting_date, expected),
+					(self.leave_allocation.to_date, expected),
+				]:
+					self.assertEqual(
+						get_leave_balance_on(self.employee.name, "_Test Leave Type", date), balance
+					)
+				ledger = frappe.get_doc("Leave Ledger Entry", {"transaction_name": adjustment.name})
+				self.assertEqual(getdate(ledger.from_date), getdate(posting_date))
+				self.assertEqual(getdate(ledger.to_date), getdate(self.leave_allocation.to_date))
+				self.assertEqual(
+					frappe.db.count("Leave Ledger Entry", {"transaction_name": adjustment.name}), 1
+				)
+				adjustment.cancel()
+				self.assertEqual(
+					get_leave_balance_on(self.employee.name, "_Test Leave Type", posting_date), 10
+				)
+
+	def test_posting_date_must_be_within_allocation(self):
+		for posting_date in [
+			add_days(self.leave_allocation.from_date, -1),
+			add_days(self.leave_allocation.to_date, 1),
+		]:
+			with self.subTest(posting_date=posting_date):
+				adjustment = create_leave_adjustment(
+					self.leave_allocation,
+					adjustment_type="Allocate",
+					leaves_to_adjust=1,
+					posting_date=posting_date,
+				)
+				self.assertRaises(frappe.ValidationError, adjustment.save)
+
+	def test_allocation_fields_are_authoritative(self):
+		adjustment = create_leave_adjustment(
+			self.leave_allocation, adjustment_type="Allocate", leaves_to_adjust=1
+		)
+		adjustment.from_date = add_days(self.leave_allocation.from_date, -30)
+		adjustment.to_date = add_days(self.leave_allocation.to_date, 30)
+		adjustment.allocated_leaves = 0
+		adjustment.validate_posting_date()
+		self.assertEqual(getdate(adjustment.from_date), getdate(self.leave_allocation.from_date))
+		self.assertEqual(getdate(adjustment.to_date), getdate(self.leave_allocation.to_date))
+		self.assertEqual(adjustment.allocated_leaves, 10)
+		adjustment.leave_type = "Unrelated Leave Type"
+		self.assertRaises(frappe.ValidationError, adjustment.validate_posting_date)
+		adjustment.leave_type = self.leave_allocation.leave_type
+		adjustment.employee = "Unrelated Employee"
+		self.assertRaises(frappe.ValidationError, adjustment.validate_posting_date)
+
+	def test_report_excludes_adjustment_before_posting_date(self):
+		from hrms.hr.report.employee_leave_balance.employee_leave_balance import get_data
+
+		posting_date = add_days(self.leave_allocation.from_date, 10)
+
+		def report(from_date, to_date):
+			rows = get_data(frappe._dict(from_date=from_date, to_date=to_date, employee=self.employee.name))
+			return next(row for row in rows if row.get("leave_type") == "_Test Leave Type")
+
+		before = report(self.leave_allocation.from_date, add_days(posting_date, -1))
+		for adjustment_type, amount, signed in [("Allocate", 2.75, 2.75), ("Reduce", 3.75, -3.75)]:
+			with self.subTest(adjustment_type=adjustment_type):
+				adjustment = create_leave_adjustment(
+					self.leave_allocation,
+					adjustment_type=adjustment_type,
+					leaves_to_adjust=amount,
+					posting_date=posting_date,
+				).submit()
+				self.assertEqual(report(self.leave_allocation.from_date, add_days(posting_date, -1)), before)
+				current = report(posting_date, self.leave_allocation.to_date)
+				self.assertEqual(current.opening_balance, 10)
+				self.assertEqual(current.leaves_allocated, signed)
+				self.assertEqual(current.closing_balance, 10 + signed)
+				adjustment.cancel()
+
 	def test_adjustment_for_over_allocation(self):
 		leave_type = create_leave_type(leave_type_name="Test Over Allocation", max_leaves_allowed=30)
 		leave_allocation = create_leave_allocation(

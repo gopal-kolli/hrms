@@ -5,7 +5,7 @@ import datetime
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, flt, get_link_to_form
+from frappe.utils import cint, flt, get_link_to_form, getdate
 
 from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
 from hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry import create_leave_ledger_entry
@@ -27,10 +27,27 @@ class LeaveAdjustment(Document):
 			self.leaves_after_adjustment = flt(self.allocated_leaves) - flt(self.leaves_to_adjust)
 
 	def validate(self):
+		self.validate_posting_date()
 		self.validate_duplicate_leave_adjustment()
 		self.validate_non_zero_adjustment()
 		self.validate_over_allocation()
 		self.validate_leave_balance()
+
+	def validate_posting_date(self):
+		allocation = frappe.get_doc("Leave Allocation", self.leave_allocation)
+		if allocation.docstatus != 1:
+			frappe.throw(_("The selected leave allocation must be submitted."))
+		if allocation.employee != self.employee or allocation.leave_type != self.leave_type:
+			frappe.throw(_("Employee and Leave Type must match the selected leave allocation."))
+
+		# Resolve fetched fields on the server for Desk, REST and console callers.
+		self.from_date = allocation.from_date
+		self.to_date = allocation.to_date
+		self.allocated_leaves = allocation.total_leaves_allocated
+		if not self.posting_date or not getdate(self.from_date) <= getdate(self.posting_date) <= getdate(
+			self.to_date
+		):
+			frappe.throw(_("Posting Date must be within the selected leave allocation period."))
 
 	def validate_duplicate_leave_adjustment(self):
 		duplicate_adjustment = frappe.db.exists(
@@ -92,7 +109,9 @@ class LeaveAdjustment(Document):
 			leaves=self.leaves_to_adjust
 			if self.adjustment_type == "Allocate"
 			else (-1 * self.leaves_to_adjust),
-			from_date=self.from_date,
+			# Allocation dates describe the available period; the correction only
+			# becomes effective on its posting date. Existing ledger rows are untouched.
+			from_date=self.posting_date,
 			to_date=self.to_date,
 			is_lwp=is_lwp,
 		)
