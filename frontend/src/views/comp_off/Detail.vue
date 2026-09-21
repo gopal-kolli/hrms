@@ -73,10 +73,10 @@
 						<h2>{{ __("Manager decision") }}</h2>
 						<p>
 							{{
-								__("Review the attendance-backed work date and decide the {0} credit for {1}.", [
-									request.half_day ? "0.5 day" : "1 day",
-									request.employee_name,
-								])
+								__(
+									"Verify the work completed and time claimed, then decide the {0} credit for {1}.",
+									[request.half_day ? "0.5 day" : "1 day", request.employee_name]
+								)
 							}}
 						</p>
 						<label for="decision-reason"

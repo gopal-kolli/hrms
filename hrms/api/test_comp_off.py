@@ -5,6 +5,7 @@ from unittest import skipUnless
 from unittest.mock import patch
 
 import frappe
+from frappe.exceptions import FrappeTypeError
 from frappe.model.document import Document
 from frappe.utils import add_days, getdate, today
 
@@ -59,8 +60,6 @@ class TestCompOffPortal(HRMSTestSuite):
 		create_leave_period(add_days(today(), -30), add_days(today(), 60), "_Test Company")
 		create_holiday_list()
 		create_holiday_list_assignment("Employee", self.employee.name, "_Test Compensatory Leave")
-		mark_attendance(self.employee)
-		mark_attendance(self.employee, date=add_days(today(), -1))
 		frappe.set_user(self.employee.user_id)
 
 	def cleanup(self):
@@ -83,14 +82,6 @@ class TestCompOffPortal(HRMSTestSuite):
 		frappe.conf.pause_scheduler = 1
 
 	def approved_credit(self, half_day=False):
-		if half_day:
-			frappe.set_user("Administrator")
-			frappe.db.set_value(
-				"Attendance",
-				{"employee": self.employee.name, "attendance_date": today()},
-				{"status": "Half Day", "half_day_status": "Absent"},
-			)
-			frappe.set_user(self.employee.user_id)
 		request = self.create(half_day=half_day)
 		return request, self.approve(request)
 
@@ -120,6 +111,7 @@ class TestCompOffPortal(HRMSTestSuite):
 		}
 
 	def test_credit_and_retry_are_exactly_once(self):
+		self.assertFalse(frappe.db.exists("Attendance", {"employee": self.employee.name}))
 		request = self.create()
 		self.assertEqual(self.create()["name"], request["name"])
 		self.assertEqual(request["status"], "Pending")
@@ -373,38 +365,93 @@ class TestCompOffPortal(HRMSTestSuite):
 				comp_off.reverse_unused_portal_credit(request["name"], "Duplicate approval")
 		self.assertEqual(self.recovery_snapshot(approved), before)
 
-	def test_full_day_cannot_be_requested_from_half_day_attendance(self):
-		frappe.set_user("Administrator")
-		frappe.db.set_value(
-			"Attendance",
-			{"employee": self.employee.name, "attendance_date": today()},
-			{"status": "Half Day", "half_day_status": "Absent"},
-		)
-		frappe.set_user(self.employee.user_id)
-		with self.assertRaises(frappe.ValidationError):
-			self.create()
+	def test_half_day_without_attendance_requires_approval_and_credits_half_day(self):
+		self.assertFalse(frappe.db.exists("Attendance", {"employee": self.employee.name}))
 		request = self.create(half_day=1)
+		self.assertEqual(request["status"], "Pending")
+		self.assertFalse(request["leave_allocation"])
+		self.assertEqual(self.create(half_day=1)["name"], request["name"])
+		with self.assertRaises(frappe.ValidationError):
+			self.create(half_day=0)
 		approved = self.approve(request)
 		self.assertEqual(
 			frappe.db.get_value("Leave Allocation", approved["leave_allocation"], "total_leaves_allocated"),
 			0.5,
 		)
+		self.assertFalse(frappe.db.exists("Attendance", {"employee": self.employee.name}))
 
-	def test_attendance_is_revalidated_before_credit(self):
-		request = self.create()
+	def test_attendance_does_not_control_request_or_approval(self):
+		frappe.set_user("Administrator")
+		mark_attendance(self.employee, status="Half Day", half_day_status="Absent")
+		frappe.set_user(self.employee.user_id)
+		request = self.create(half_day=0)
 		frappe.set_user("Administrator")
 		frappe.db.set_value(
 			"Attendance", {"employee": self.employee.name, "attendance_date": today()}, "docstatus", 2
 		)
-		frappe.set_user(self.manager.user_id)
-		with self.assertRaises(frappe.ValidationError):
-			comp_off.decide_request(request["name"], "Approved")
-		self.assertFalse(frappe.db.get_value(comp_off.DOCTYPE, request["name"], "leave_allocation"))
-		# Rejection remains available when attendance was corrected/cancelled.
+		approved = self.approve(request)
+		self.assertEqual(approved["status"], "Approved")
 		self.assertEqual(
-			comp_off.decide_request(request["name"], "Rejected", "Attendance needs correction")["status"],
-			"Rejected",
+			frappe.db.get_value("Leave Allocation", approved["leave_allocation"], "total_leaves_allocated"),
+			1,
 		)
+
+	def test_calendar_dates_without_attendance_exclude_claimed_and_pre_joining_days(self):
+		self.assertFalse(frappe.db.exists("Attendance", {"employee": self.employee.name}))
+		self.assertEqual(
+			comp_off.get_context()["eligible_dates"],
+			[{"date": today()}, {"date": add_days(today(), -1)}],
+		)
+		request = self.create()
+		self.assertEqual(comp_off.get_context()["eligible_dates"], [{"date": add_days(today(), -1)}])
+		frappe.set_user(self.manager.user_id)
+		comp_off.decide_request(request["name"], "Rejected", "Work not authorised")
+		frappe.set_user("Administrator")
+		self.employee.db_set("date_of_joining", today())
+		frappe.set_user(self.employee.user_id)
+		self.assertEqual(comp_off.get_context()["eligible_dates"], [{"date": today()}])
+		with self.assertRaises(frappe.ValidationError):
+			self.create(add_days(today(), -1))
+
+	def test_non_holiday_and_invalid_duration_remain_blocked(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.create(add_days(today(), -2))
+		for half_day, error in (
+			(-1, frappe.ValidationError),
+			(2, frappe.ValidationError),
+			("0.5", FrappeTypeError),
+			("invalid", FrappeTypeError),
+		):
+			with self.subTest(half_day=half_day), self.assertRaises(error):
+				self.create(half_day=half_day)
+		self.assertFalse(frappe.db.exists(comp_off.DOCTYPE, {"employee": self.employee.name}))
+
+	def test_calendar_dates_require_leave_period_for_next_day_credit(self):
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Leave Period", {"company": "_Test Company", "is_active": 1}, "to_date", today())
+		frappe.set_user(self.employee.user_id)
+		self.assertEqual(comp_off.get_context()["eligible_dates"], [{"date": add_days(today(), -1)}])
+		with self.assertRaises(frappe.ValidationError):
+			self.create()
+		self.assertEqual(self.create(add_days(today(), -1))["status"], "Pending")
+
+	def test_duration_accepts_json_boolean_and_form_integer(self):
+		for half_day in (True, 1, "1"):
+			with self.subTest(half_day=half_day):
+				request = self.create(half_day=half_day)
+				self.assertEqual(request["half_day"], 1)
+		for half_day in (False, 0, "0"):
+			with self.subTest(half_day=half_day):
+				request = self.create(add_days(today(), -1), half_day=half_day)
+				self.assertEqual(request["half_day"], 0)
+
+	def test_joining_date_is_revalidated_before_credit(self):
+		request = self.create(add_days(today(), -1))
+		frappe.set_user("Administrator")
+		self.employee.db_set("date_of_joining", today())
+		with self.assertRaises(frappe.ValidationError):
+			self.approve(request)
+		self.assertFalse(frappe.db.get_value(comp_off.DOCTYPE, request["name"], "leave_allocation"))
 
 	def test_out_of_order_credit_preserves_dates(self):
 		later = self.create()
