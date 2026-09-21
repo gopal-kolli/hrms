@@ -5,6 +5,7 @@ from unittest import skipUnless
 from unittest.mock import patch
 
 import frappe
+from frappe.exceptions import FrappeTypeError
 from frappe.model.document import Document
 from frappe.utils import add_days, getdate, today
 
@@ -415,8 +416,13 @@ class TestCompOffPortal(HRMSTestSuite):
 	def test_non_holiday_and_invalid_duration_remain_blocked(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.create(add_days(today(), -2))
-		for half_day in (-1, 2, "0.5", "invalid"):
-			with self.subTest(half_day=half_day), self.assertRaises(frappe.ValidationError):
+		for half_day, error in (
+			(-1, frappe.ValidationError),
+			(2, frappe.ValidationError),
+			("0.5", FrappeTypeError),
+			("invalid", FrappeTypeError),
+		):
+			with self.subTest(half_day=half_day), self.assertRaises(error):
 				self.create(half_day=half_day)
 		self.assertFalse(frappe.db.exists(comp_off.DOCTYPE, {"employee": self.employee.name}))
 
