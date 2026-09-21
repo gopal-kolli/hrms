@@ -54,7 +54,7 @@
 						<p>
 							{{
 								__(
-									"There are no unclaimed holidays in your assigned calendar up to today. Contact HR if a holiday is missing."
+									"No dates are available for a new request. Contact HR to check your holiday calendar and leave period."
 								)
 							}}
 						</p>

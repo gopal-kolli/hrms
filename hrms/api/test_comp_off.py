@@ -420,6 +420,25 @@ class TestCompOffPortal(HRMSTestSuite):
 				self.create(half_day=half_day)
 		self.assertFalse(frappe.db.exists(comp_off.DOCTYPE, {"employee": self.employee.name}))
 
+	def test_calendar_dates_require_leave_period_for_next_day_credit(self):
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Leave Period", {"company": "_Test Company", "is_active": 1}, "to_date", today())
+		frappe.set_user(self.employee.user_id)
+		self.assertEqual(comp_off.get_context()["eligible_dates"], [{"date": add_days(today(), -1)}])
+		with self.assertRaises(frappe.ValidationError):
+			self.create()
+		self.assertEqual(self.create(add_days(today(), -1))["status"], "Pending")
+
+	def test_duration_accepts_json_boolean_and_form_integer(self):
+		for half_day in (True, 1, "1"):
+			with self.subTest(half_day=half_day):
+				request = self.create(half_day=half_day)
+				self.assertEqual(request["half_day"], 1)
+		for half_day in (False, 0, "0"):
+			with self.subTest(half_day=half_day):
+				request = self.create(add_days(today(), -1), half_day=half_day)
+				self.assertEqual(request["half_day"], 0)
+
 	def test_joining_date_is_revalidated_before_credit(self):
 		request = self.create(add_days(today(), -1))
 		frappe.set_user("Administrator")

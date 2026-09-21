@@ -195,10 +195,16 @@ def get_context() -> dict:
 		filters={"employee": employee.name, "docstatus": ["<", 2]},
 		fields=["work_from_date", "work_end_date", "portal_status"],
 	)
+	periods = frappe.get_all(
+		"Leave Period",
+		filters={"company": employee.company, "is_active": 1},
+		fields=["from_date", "to_date"],
+	)
 	eligible = [
 		{"date": str(date)}
 		for date in sorted(holidays, reverse=True)
-		if not any(
+		if any(getdate(p.from_date) <= add_days(date, 1) <= getdate(p.to_date) for p in periods)
+		and not any(
 			r.portal_status != "Rejected" and getdate(r.work_from_date) <= date <= getdate(r.work_end_date)
 			for r in requests
 		)
@@ -258,7 +264,7 @@ def create_request(work_date: str, reason: str, half_day: int = 0) -> dict:
 	date = getdate(work_date)
 	if not work_date or date > getdate(today()) or date < getdate(employee.date_of_joining):
 		frappe.throw(_("Choose a completed work date on or after your joining date."))
-	half_day = cint(half_day)
+	half_day = int(str(half_day) in ("1", "True"))
 	existing = frappe.db.sql(
 		"""select name, work_from_date, work_end_date, half_day, reason, portal_request
 		from `tabCompensatory Leave Request` where employee=%s and docstatus<2
