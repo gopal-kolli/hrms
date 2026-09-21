@@ -24,6 +24,11 @@ from hrms.tests.utils import HRMSTestSuite
 class TestLeaveAdjustment(HRMSTestSuite):
 	def setUp(self):
 		self.employee = frappe.get_doc("Employee", {"first_name": "_Test Employee"})
+		if self._testMethodName.startswith("test_concurrent_"):
+			# Each concurrency scenario commits its own uniquely named allocation
+			# for separate DB connections. Do not also persist the shared ordinary
+			# test allocation across the CI commands for those scenarios.
+			return
 		self.leave_allocation = create_leave_allocation(
 			employee=self.employee.name,
 			employee_name=self.employee.employee_name,
