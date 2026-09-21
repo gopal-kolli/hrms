@@ -18,9 +18,6 @@ class LeaveAdjustment(Document):
 		precision = self.precision("leaves_to_adjust") or system_precision
 		self.leaves_to_adjust = flt(self.leaves_to_adjust, precision)
 
-	def before_save(self):
-		self.set_leaves_after_adjustment()
-
 	def set_leaves_after_adjustment(self):
 		if self.adjustment_type == "Allocate":
 			self.leaves_after_adjustment = flt(self.allocated_leaves) + flt(self.leaves_to_adjust)
@@ -33,6 +30,9 @@ class LeaveAdjustment(Document):
 		self.validate_non_zero_adjustment()
 		self.validate_over_allocation()
 		self.validate_leave_balance()
+		# Direct submit runs validate but does not run the draft-only before_save.
+		# Persist the derived value for both Desk save/submit and API submissions.
+		self.set_leaves_after_adjustment()
 
 	def validate_posting_date(self):
 		# Serialize adjustments to this allocation, including separate credit dates.
