@@ -51,6 +51,8 @@ jobs:
           bench --site test_site run-tests --app hrms --module hrms.hr.doctype.compensatory_leave_request.test_compensatory_leave_request
           bench --site test_site run-tests --app hrms --module hrms.hr.doctype.leave_adjustment.test_leave_adjustment
           HRMS_CONCURRENCY_ACCEPTANCE=1 bench --site test_site run-tests --app hrms --module hrms.api.test_comp_off --test test_concurrent_requests_and_approvals_are_exactly_once
+          HRMS_CONCURRENCY_ACCEPTANCE=1 bench --site test_site run-tests --app hrms --module hrms.hr.doctype.leave_adjustment.test_leave_adjustment --test test_concurrent_same_date_monthly_credits_submit_exactly_once
+          HRMS_CONCURRENCY_ACCEPTANCE=1 bench --site test_site run-tests --app hrms --module hrms.hr.doctype.leave_adjustment.test_leave_adjustment --test test_concurrent_credit_and_reduction_cancel_preserve_cap
       - uses: actions/upload-artifact@v4
         if: always()
         with:
