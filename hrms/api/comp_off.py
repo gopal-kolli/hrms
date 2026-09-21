@@ -13,7 +13,7 @@ from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime, today
 
 from hrms.api.comp_off_recovery import reverse_unused_portal_credit
-from hrms.hr.utils import get_holiday_dates_for_employee, get_leave_period
+from hrms.hr.utils import get_holidays_for_employee, get_leave_period
 
 DOCTYPE = "Compensatory Leave Request"
 LEAVE_TYPE = "Compensatory Off"
@@ -143,19 +143,9 @@ def validate_portal_request(doc):
 		return
 	if doc.work_from_date != doc.work_end_date or getdate(doc.work_from_date) > getdate(today()):
 		frappe.throw(_("Choose one completed work date for each request."))
-	attendance = frappe.get_all(
-		"Attendance",
-		filters={"employee": doc.employee, "attendance_date": doc.work_from_date, "docstatus": 1},
-		fields=["status"],
-	)
-	if len(attendance) != 1 or attendance[0].status not in ("Present", "Work From Home", "Half Day"):
-		frappe.throw(_("HR must verify one submitted attendance record for this work date."))
-	if cint(doc.half_day) != int(attendance[0].status == "Half Day"):
-		frappe.throw(
-			_(
-				"Attendance changed after this request. Reject it so the employee can request the correct credit."
-			)
-		)
+	employee = _employee_by_name(doc.employee)
+	if getdate(doc.work_from_date) < getdate(employee.date_of_joining):
+		frappe.throw(_("Choose a completed work date on or after your joining date."))
 	if doc.leave_type != LEAVE_TYPE or not frappe.db.get_value("Leave Type", LEAVE_TYPE, "is_compensatory"):
 		frappe.throw(_("HR must configure the Compensatory Off leave type before you can request credit."))
 	if not get_leave_period(
@@ -192,41 +182,27 @@ def get_context() -> dict:
 	_require_enabled()
 	employee = _employee()
 	manager = _manager(employee)
-	attendance = frappe.get_all(
-		"Attendance",
-		filters={
-			"employee": employee.name,
-			"docstatus": 1,
-			"status": ["in", ["Present", "Work From Home", "Half Day"]],
-			"attendance_date": ["<=", today()],
-		},
-		fields=["attendance_date", "status"],
-		order_by="attendance_date desc",
-		limit_page_length=0,
-	)
-	eligible = []
-	if attendance:
-		holidays = {
-			getdate(d)
-			for d in get_holiday_dates_for_employee(
-				employee.name, attendance[-1].attendance_date, attendance[0].attendance_date
-			)
-		}
-		requests = frappe.get_all(
-			DOCTYPE,
-			filters={"employee": employee.name, "docstatus": ["<", 2]},
-			fields=["work_from_date", "work_end_date", "portal_status"],
+	# Holiday eligibility is independent of attendance. The manager verifies work
+	# completed and the employee's requested full-day or half-day credit.
+	holidays = {
+		getdate(row.holiday_date)
+		for row in get_holidays_for_employee(
+			employee.name, employee.date_of_joining or today(), today(), raise_exception=False
 		)
-		for row in attendance:
-			date = getdate(row.attendance_date)
-			if sum(getdate(other.attendance_date) == date for other in attendance) != 1:
-				continue
-			if date in holidays and not any(
-				r.portal_status != "Rejected"
-				and getdate(r.work_from_date) <= date <= getdate(r.work_end_date)
-				for r in requests
-			):
-				eligible.append({"date": str(date), "half_day": row.status == "Half Day"})
+	}
+	requests = frappe.get_all(
+		DOCTYPE,
+		filters={"employee": employee.name, "docstatus": ["<", 2]},
+		fields=["work_from_date", "work_end_date", "portal_status"],
+	)
+	eligible = [
+		{"date": str(date)}
+		for date in sorted(holidays, reverse=True)
+		if not any(
+			r.portal_status != "Rejected" and getdate(r.work_from_date) <= date <= getdate(r.work_end_date)
+			for r in requests
+		)
+	]
 	return {
 		"enabled": True,
 		"employee": {"name": employee.name, "employee_name": employee.employee_name},
@@ -282,17 +258,7 @@ def create_request(work_date: str, reason: str, half_day: int = 0) -> dict:
 	date = getdate(work_date)
 	if not work_date or date > getdate(today()) or date < getdate(employee.date_of_joining):
 		frappe.throw(_("Choose a completed work date on or after your joining date."))
-	attendance = frappe.get_all(
-		"Attendance",
-		filters={"employee": employee.name, "attendance_date": date, "docstatus": 1},
-		fields=["status"],
-	)
-	if len(attendance) != 1 or attendance[0].status not in ("Present", "Work From Home", "Half Day"):
-		frappe.throw(_("HR must verify one submitted attendance record for this work date."))
-	verified_half_day = int(attendance[0].status == "Half Day")
-	if cint(half_day) != verified_half_day:
-		frappe.throw(_("Your attendance changed. Refresh the page before requesting credit."))
-	half_day = verified_half_day
+	half_day = cint(half_day)
 	existing = frappe.db.sql(
 		"""select name, work_from_date, work_end_date, half_day, reason, portal_request
 		from `tabCompensatory Leave Request` where employee=%s and docstatus<2

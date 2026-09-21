@@ -54,7 +54,7 @@
 						<p>
 							{{
 								__(
-									"HR needs to verify your submitted Present, Work From Home, or Half Day attendance for an eligible holiday before you can request credit."
+									"There are no unclaimed holidays in your assigned calendar up to today. Contact HR if a holiday is missing."
 								)
 							}}
 						</p>
@@ -68,13 +68,21 @@
 							<select id="work-date" v-model="workDate" required>
 								<option value="" disabled>{{ __("Select a date") }}</option>
 								<option v-for="date in eligibleDates" :key="date.date" :value="date.date">
-									{{ formatDate(date.date) }}{{ date.half_day ? ` · ${__("Half day")}` : "" }}
+									{{ formatDate(date.date) }}
 								</option>
 							</select>
 						</div>
+						<div class="comp-off-field">
+							<label for="work-duration">{{ __("Time worked") }}</label>
+							<select id="work-duration" v-model="halfDay" required>
+								<option :value="0">{{ __("Full day — 1 day credit") }}</option>
+								<option :value="1">{{ __("Half day — 0.5 day credit") }}</option>
+							</select>
+							<p>{{ __("Your manager will verify the work completed and the time claimed.") }}</p>
+						</div>
 						<div class="comp-off-credit-preview" v-if="selectedDate">
 							<FeatherIcon name="award" class="h-5 w-5" /><span>{{
-								selectedDate.half_day
+								halfDay
 									? __("This request becomes a 0.5 day credit after manager approval.")
 									: __("This request becomes a 1 day credit after manager approval.")
 							}}</span>
@@ -132,6 +140,7 @@ const dayjs = inject("$dayjs")
 const router = useRouter()
 const loading = ref(true)
 const workDate = ref("")
+const halfDay = ref(0)
 const reason = ref("")
 const error = ref("")
 const contextError = ref("")
@@ -173,8 +182,7 @@ async function submit() {
 	try {
 		const request = await submitCompOff(createCompOffRequest, {
 			work_date: workDate.value,
-			// The server derives this from submitted attendance and verifies this value.
-			half_day: selectedDate.value.half_day ? 1 : 0,
+			half_day: halfDay.value,
 			reason: reason.value,
 		})
 		router.replace({ name: "CompOffDetailView", params: { id: request.name } })

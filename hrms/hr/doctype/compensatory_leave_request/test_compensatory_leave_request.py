@@ -27,7 +27,9 @@ class TestCompensatoryLeaveRequest(HRMSTestSuite):
 	def test_leave_balance_on_submit(self):
 		"""check creation of leave allocation on submission of compensatory leave request"""
 		employee = get_employee()
-		mark_attendance(employee)
+		self.assertFalse(
+			frappe.db.exists("Attendance", {"employee": employee.name, "attendance_date": today()})
+		)
 		compensatory_leave_request = get_compensatory_leave_request(employee.name)
 
 		before = get_leave_balance_on(employee.name, compensatory_leave_request.leave_type, today())
@@ -161,7 +163,9 @@ class TestCompensatoryLeaveRequest(HRMSTestSuite):
 
 	def test_half_day_compensatory_leave(self):
 		employee = get_employee()
-		mark_attendance(employee, status="Half Day", half_day_status="Absent")
+		self.assertFalse(
+			frappe.db.exists("Attendance", {"employee": employee.name, "attendance_date": today()})
+		)
 		date = today()
 		compensatory_leave_request = frappe.new_doc("Compensatory Leave Request")
 		compensatory_leave_request.update(
@@ -173,9 +177,6 @@ class TestCompensatoryLeaveRequest(HRMSTestSuite):
 				reason="test",
 			)
 		)
-
-		# cannot apply for full day compensatory leave for a half day attendance
-		self.assertRaises(frappe.ValidationError, compensatory_leave_request.submit)
 
 		compensatory_leave_request.half_day = 1
 		compensatory_leave_request.half_day_date = date
