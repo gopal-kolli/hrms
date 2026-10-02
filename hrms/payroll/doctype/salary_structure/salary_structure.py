@@ -12,7 +12,7 @@ from frappe.utils import cint, cstr, flt, get_link_to_form
 
 import erpnext
 
-from hrms.payroll.utils import sanitize_expression
+from hrms.payroll.utils import COMPONENT_PARENTFIELDS, sanitize_expression
 
 
 class SalaryStructure(Document):
@@ -38,7 +38,7 @@ class SalaryStructure(Document):
 		self.reset_condition_and_formula_fields()
 
 	def validate_formula_setup(self):
-		for table in ["earnings", "deductions"]:
+		for table in COMPONENT_PARENTFIELDS:
 			for row in self.get(table):
 				if not row.amount_based_on_formula and row.formula:
 					frappe.msgprint(
@@ -62,7 +62,7 @@ class SalaryStructure(Document):
 			"is_flexible_benefit",
 		]
 		overwritten_fields_if_missing = ["amount_based_on_formula", "formula", "amount"]
-		for table in ["earnings", "deductions"]:
+		for table in COMPONENT_PARENTFIELDS:
 			for d in self.get(table):
 				component_default_value = frappe.db.get_value(
 					"Salary Component",
@@ -95,7 +95,7 @@ class SalaryStructure(Document):
 
 	def validate_payment_days_based_dependent_component(self):
 		abbreviations = self.get_component_abbreviations()
-		for component_type in ("earnings", "deductions"):
+		for component_type in COMPONENT_PARENTFIELDS:
 			for row in self.get(component_type):
 				if (
 					row.formula
@@ -115,8 +115,9 @@ class SalaryStructure(Document):
 					frappe.throw(message, title=_("Payment Days Dependency"))
 
 	def get_component_abbreviations(self):
-		abbr = [d.abbr for d in self.earnings if d.depends_on_payment_days]
-		abbr += [d.abbr for d in self.deductions if d.depends_on_payment_days]
+		abbr = []
+		for table in COMPONENT_PARENTFIELDS:
+			abbr += [d.abbr for d in self.get(table) if d.depends_on_payment_days]
 
 		return abbr
 
@@ -136,7 +137,7 @@ class SalaryStructure(Document):
 				break
 
 	def sanitize_condition_and_formula_fields(self):
-		for table in ("earnings", "deductions", "employer_contributions"):
+		for table in COMPONENT_PARENTFIELDS:
 			for row in self.get(table):
 				row.condition = row.condition.strip() if row.condition else ""
 				row.formula = row.formula.strip() if row.formula else ""
@@ -145,7 +146,7 @@ class SalaryStructure(Document):
 
 	def reset_condition_and_formula_fields(self):
 		# set old values (allowing multiline strings for better readability in the doctype form)
-		for table in ("earnings", "deductions", "employer_contributions"):
+		for table in COMPONENT_PARENTFIELDS:
 			for row in self.get(table):
 				row.condition = row._condition
 				row.formula = row._formula
@@ -153,23 +154,17 @@ class SalaryStructure(Document):
 		self.db_update_all()
 
 	def get_employees(self, **kwargs):
-		conditions, values = [], []
+		Employee = frappe.qb.DocType("Employee")
+		query = frappe.qb.from_(Employee).select(Employee.name).where(Employee.status == "Active")
 		for field, value in kwargs.items():
 			if value:
-				conditions.append(f"{field}=%s")
-				values.append(value)
+				query = query.where(Employee[field] == value)
 
-		condition_str = " and " + " and ".join(conditions) if conditions else ""
-
-		# nosemgrep: frappe-semgrep-rules.rules.frappe-using-db-sql
-		employees = frappe.db.sql_list(
-			f"select name from tabEmployee where status='Active' {condition_str}",
-			tuple(values),
-		)
+		employees = query.run(pluck="name")
 
 		return employees
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def assign_salary_structure(
 		self,
 		branch: str | None = None,
@@ -313,15 +308,19 @@ def create_salary_structure_assignment(
 
 
 def get_existing_assignments(employees, salary_structure, from_date):
-	# nosemgrep: frappe-semgrep-rules.rules.frappe-using-db-sql
-	salary_structures_assignments = frappe.db.sql_list(
-		f"""
-		SELECT DISTINCT employee FROM `tabSalary Structure Assignment`
-		WHERE salary_structure=%s AND employee IN ({", ".join(["%s"] * len(employees))})
-		AND from_date=%s AND company=%s AND docstatus=1
-		""",
-		[salary_structure.name, *employees, from_date, salary_structure.company],
-	)
+	ssa = frappe.qb.DocType("Salary Structure Assignment")
+	salary_structures_assignments = (
+		frappe.qb.from_(ssa)
+		.select(ssa.employee)
+		.distinct()
+		.where(
+			(ssa.salary_structure == salary_structure.name)
+			& (ssa.employee.isin(employees))
+			& (ssa.from_date == from_date)
+			& (ssa.company == salary_structure.company)
+			& (ssa.docstatus == 1)
+		)
+	).run(pluck="employee")
 	if salary_structures_assignments:
 		frappe.msgprint(
 			_(
@@ -424,6 +423,7 @@ def get_employees(salary_structure: str) -> list[str]:
 
 
 @frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
 def get_salary_component(
 	doctype: str, txt: str, searchfield: str, start: int, page_len: int, filters: dict
 ) -> list:

@@ -63,7 +63,7 @@ def get_active_employees() -> int:
 	return frappe.db.count("Employee", {"status": "Active"})
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def subscription_updated(app: str, plan: str):
 	if app in ["hrms", "erpnext"] and plan:
 		update_erpnext_access()
@@ -173,8 +173,8 @@ def hide_erpnext() -> bool:
 
 
 def has_subscription(secret_key) -> bool:
-	url = f"https://frappecloud.com/api/method/press.api.developer.marketplace.get_subscription_status?secret_key={secret_key}"
-	response = requests.request(method="POST", url=url, timeout=5)
+	url = "https://frappecloud.com/api/method/press.api.developer.marketplace.get_subscription_status"
+	response = requests.post(url, data={"secret_key": secret_key}, timeout=5)
 
 	status = response.json().get("message")
 	return True if status == "Active" else False
