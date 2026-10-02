@@ -31,3 +31,10 @@ bench --site test_site set-config allow_tests 1
 bench --site test_site install-app erpnext
 bench --site test_site install-app hrms
 bench build --app frappe
+
+# Real PDF rendering fetches local CSS/assets; keep the web process available
+# without starting scheduler or workers on this disposable test bench.
+bench --site test_site set-config host_name http://127.0.0.1:8000
+bench use test_site
+bench --site test_site serve --port 8000 --noreload > logs/ci-web.log 2>&1 &
+curl -fsS --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:8000/api/method/ping
