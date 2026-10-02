@@ -3,6 +3,10 @@
 set -euo pipefail
 sudo apt-get update -qq
 sudo apt-get install -y redis-server mariadb-client libmariadb-dev libcups2-dev
+# Salary-slip email tests render real PDFs. Install the official patched Qt build.
+curl -fsSL --retry 3 https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.jammy_amd64.deb -o /tmp/wkhtmltox.deb
+sudo apt-get install -y /tmp/wkhtmltox.deb
+wkhtmltopdf --version
 cd "$HOME"
 git clone --depth 1 --branch version-16 https://github.com/frappe/frappe.git frappe
 git -C frappe fetch --depth 1 origin 97a5dd93ca5883bcc9c4ef9834120c5cba397b67
