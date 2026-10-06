@@ -34,6 +34,10 @@ def create_comp_off_approver_role():
 		frappe.get_doc(
 			{"doctype": "Role", "role_name": APPROVER_ROLE, "desk_access": 0, "is_custom": 1}
 		).insert(ignore_permissions=True)
+	else:
+		role = frappe.get_doc("Role", APPROVER_ROLE)
+		if role.desk_access or role.disabled:
+			frappe.throw("Comp Off Approver must be an enabled portal-only role. Review the existing role.")
 	if not frappe.db.exists("Role Profile", APPROVER_ROLE):
 		frappe.get_doc(
 			{
@@ -42,6 +46,12 @@ def create_comp_off_approver_role():
 				"roles": [{"role": APPROVER_ROLE}],
 			}
 		).insert(ignore_permissions=True)
+	else:
+		profile = frappe.get_doc("Role Profile", APPROVER_ROLE)
+		if [row.role for row in profile.roles] != [APPROVER_ROLE]:
+			frappe.throw(
+				"Comp Off Approver profile must contain only its namesake role. Review the existing profile."
+			)
 
 
 def before_uninstall():

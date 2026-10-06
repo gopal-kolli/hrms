@@ -31,8 +31,9 @@ class TestCompOffPortal(HRMSTestSuite):
 		self.previous_scheduler = frappe.conf.get("pause_scheduler")
 		frappe.conf.enable_comp_off_self_service = 1
 		self.addCleanup(self.cleanup)
+		identity_suffix = frappe.generate_hash(length=10)
 		for key in ("employee", "manager", "other"):
-			email = f"comp-off-{key}@example.com"
+			email = f"comp-off-{key}-{identity_suffix}@example.com"
 			if not frappe.db.exists("User", email):
 				frappe.get_doc(
 					{
@@ -298,6 +299,19 @@ class TestCompOffPortal(HRMSTestSuite):
 		self.assertEqual(comp_off.get_requests(team=1), [])
 		with self.assertRaises(frappe.PermissionError):
 			comp_off.decide_request(request["name"], "Approved")
+
+	def test_role_provisioning_rejects_conflicting_metadata(self):
+		frappe.set_user("Administrator")
+		create_comp_off_approver_role()
+		frappe.db.set_value("Role", comp_off.APPROVER_ROLE, "desk_access", 1)
+		with self.assertRaises(frappe.ValidationError):
+			create_comp_off_approver_role()
+		frappe.db.set_value("Role", comp_off.APPROVER_ROLE, "desk_access", 0)
+		profile = frappe.get_doc("Role Profile", comp_off.APPROVER_ROLE)
+		profile.append("roles", {"role": "HR Manager"})
+		profile.save()
+		with self.assertRaises(frappe.ValidationError):
+			create_comp_off_approver_role()
 
 	def test_additive_profile_grant_survives_user_save(self):
 		request = self.create()
