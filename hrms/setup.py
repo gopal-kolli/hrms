@@ -21,8 +21,37 @@ def after_install():
 	set_single_defaults()
 	setup_repost_defaults()
 	create_default_role_profiles()
+	create_comp_off_approver_role()
 	run_post_install_patches()
 	add_default_hr_permissions()
+
+
+def create_comp_off_approver_role():
+	"""Provision an unassigned portal-only role; grants are an explicit site action."""
+	from hrms.api.comp_off import APPROVER_ROLE
+
+	if not frappe.db.exists("Role", APPROVER_ROLE):
+		frappe.get_doc(
+			{"doctype": "Role", "role_name": APPROVER_ROLE, "desk_access": 0, "is_custom": 1}
+		).insert(ignore_permissions=True)
+	else:
+		role = frappe.get_doc("Role", APPROVER_ROLE)
+		if role.desk_access or role.disabled:
+			frappe.throw("Comp Off Approver must be an enabled portal-only role. Review the existing role.")
+	if not frappe.db.exists("Role Profile", APPROVER_ROLE):
+		frappe.get_doc(
+			{
+				"doctype": "Role Profile",
+				"role_profile": APPROVER_ROLE,
+				"roles": [{"role": APPROVER_ROLE}],
+			}
+		).insert(ignore_permissions=True)
+	else:
+		profile = frappe.get_doc("Role Profile", APPROVER_ROLE)
+		if [row.role for row in profile.roles] != [APPROVER_ROLE]:
+			frappe.throw(
+				"Comp Off Approver profile must contain only its namesake role. Review the existing profile."
+			)
 
 
 def before_uninstall():

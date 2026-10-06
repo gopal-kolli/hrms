@@ -19,6 +19,7 @@ from hrms.hr.doctype.holiday_list_assignment.test_holiday_list_assignment import
 )
 from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
 from hrms.hr.doctype.leave_period.test_leave_period import create_leave_period
+from hrms.setup import create_comp_off_approver_role
 from hrms.tests.utils import HRMSTestSuite
 
 
@@ -30,8 +31,9 @@ class TestCompOffPortal(HRMSTestSuite):
 		self.previous_scheduler = frappe.conf.get("pause_scheduler")
 		frappe.conf.enable_comp_off_self_service = 1
 		self.addCleanup(self.cleanup)
+		identity_suffix = frappe.generate_hash(length=10)
 		for key in ("employee", "manager", "other"):
-			email = f"comp-off-{key}@example.com"
+			email = f"comp-off-{key}-{identity_suffix}@example.com"
 			if not frappe.db.exists("User", email):
 				frappe.get_doc(
 					{
@@ -159,6 +161,184 @@ class TestCompOffPortal(HRMSTestSuite):
 			doc.submit()
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc(comp_off.DOCTYPE, request["name"], ignore_permissions=True)
+
+	def grant_company_approver(self, employee=None):
+		frappe.set_user("Administrator")
+		create_comp_off_approver_role()
+		frappe.get_doc("User", (employee or self.other).user_id).add_roles(comp_off.APPROVER_ROLE)
+		frappe.set_user((employee or self.other).user_id)
+
+	def test_company_approver_queue_decision_and_retry(self):
+		request = self.create(half_day=1)
+		self.grant_company_approver()
+		context = comp_off.get_context()
+		self.assertFalse(context["is_manager"])
+		self.assertTrue(context["is_company_approver"])
+		self.assertEqual(comp_off.get_requests(), [])
+		queue = comp_off.get_requests(team=1)
+		self.assertEqual([row["name"] for row in queue], [request["name"]])
+		self.assertTrue(queue[0]["can_approve"])
+		approved = comp_off.decide_request(request["name"], "Approved", "Holiday work verified")
+		self.assertEqual(approved["decision_by"], self.other.user_id)
+		self.assertEqual(approved["decision_reason"], "Holiday work verified")
+		self.assertEqual(comp_off.decide_request(request["name"], "Approved"), approved)
+		entries = frappe.get_all(
+			"Leave Ledger Entry",
+			filters={"transaction_name": approved["leave_allocation"], "docstatus": 1},
+			pluck="leaves",
+		)
+		self.assertEqual(entries, [0.5])
+
+	def test_company_approver_cannot_approve_self_or_use_desk(self):
+		request = self.create()
+		self.grant_company_approver(self.employee)
+		self.assertEqual(comp_off.get_requests(team=1), [])
+		self.assertFalse(comp_off.get_requests()[0]["can_approve"])
+		for decision in ("Approved", "Rejected"):
+			with self.assertRaises(frappe.PermissionError):
+				comp_off.decide_request(request["name"], decision, "Not allowed")
+		self.grant_company_approver()
+		doc = frappe.get_doc(comp_off.DOCTYPE, request["name"])
+		for permission in ("write", "submit", "cancel", "delete"):
+			self.assertFalse(comp_off.has_permission(doc, ptype=permission))
+		with self.assertRaises(frappe.PermissionError):
+			doc.save(ignore_permissions=True)
+		with self.assertRaises(frappe.PermissionError):
+			doc.submit()
+
+	def test_company_approver_requires_same_company_active_unique_identity(self):
+		request = self.create()
+		self.grant_company_approver()
+		for field, value in (("company", "_Test Company 2"), ("status", "Inactive")):
+			original = self.other.get(field)
+			frappe.db.set_value("Employee", self.other.name, field, value)
+			with self.assertRaises(frappe.PermissionError):
+				comp_off.decide_request(request["name"], "Approved")
+			frappe.db.set_value("Employee", self.other.name, field, original)
+		# Simulate corrupt duplicate mappings without relaxing native Employee validation.
+		frappe.set_user("Administrator")
+		duplicate = frappe.copy_doc(self.other)
+		duplicate.user_id = None
+		duplicate.insert()
+		frappe.db.set_value("Employee", duplicate.name, "user_id", self.other.user_id)
+		frappe.set_user(self.other.user_id)
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.decide_request(request["name"], "Approved")
+		frappe.db.set_value("Employee", duplicate.name, "user_id", None)
+		# Cross-company requests must not be disclosed by the company-wide queue.
+		frappe.db.set_value("Employee", self.employee.name, "company", "_Test Company 2")
+		self.assertEqual(comp_off.get_requests(team=1), [])
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.decide_request(request["name"], "Approved")
+
+	def test_company_approver_revocation_and_disabled_controls(self):
+		request = self.create()
+		self.grant_company_approver()
+		# Prime ordinary roles cache, then revoke the persisted grant directly.
+		frappe.get_roles(self.other.user_id)
+		frappe.db.delete("Has Role", {"parent": self.other.user_id, "role": comp_off.APPROVER_ROLE})
+		self.assertFalse(comp_off.get_context()["is_company_approver"])
+		self.assertEqual(comp_off.get_requests(team=1), [])
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.decide_request(request["name"], "Approved")
+		self.grant_company_approver()
+		frappe.db.set_value("Role", comp_off.APPROVER_ROLE, "disabled", 1)
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.decide_request(request["name"], "Approved")
+		frappe.db.set_value("Role", comp_off.APPROVER_ROLE, "disabled", 0)
+		frappe.db.set_value("User", self.other.user_id, "enabled", 0)
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.get_requests(team=1)
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.decide_request(request["name"], "Approved")
+
+	def test_company_approver_rechecked_after_lock(self):
+		request = self.create()
+		self.grant_company_approver()
+		lock = comp_off._lock_employee
+
+		def revoke_after_lock(employee):
+			lock(employee)
+			frappe.db.delete("Has Role", {"parent": self.other.user_id, "role": comp_off.APPROVER_ROLE})
+
+		with patch.object(comp_off, "_lock_employee", side_effect=revoke_after_lock):
+			with self.assertRaises(frappe.PermissionError):
+				comp_off.decide_request(request["name"], "Approved")
+		self.assertEqual(frappe.db.get_value(comp_off.DOCTYPE, request["name"], "portal_status"), "Pending")
+
+	def test_company_approver_rejection_and_feature_off(self):
+		request = self.create()
+		self.grant_company_approver()
+		with self.assertRaises(frappe.ValidationError):
+			comp_off.decide_request(request["name"], "Rejected")
+		rejected = comp_off.decide_request(request["name"], "Rejected", "Work not verified")
+		self.assertEqual(rejected["decision_by"], self.other.user_id)
+		self.assertFalse(rejected["leave_allocation"])
+		self.assertEqual(comp_off.decide_request(request["name"], "Rejected", "Work not verified"), rejected)
+		frappe.conf.enable_comp_off_self_service = 0
+		with self.assertRaises(frappe.ValidationError):
+			comp_off.decide_request(request["name"], "Rejected", "Work not verified")
+
+	def test_company_approver_role_provisioning_never_assigns_users(self):
+		frappe.set_user("Administrator")
+		before = frappe.db.count("Has Role", {"role": comp_off.APPROVER_ROLE})
+		create_comp_off_approver_role()
+		create_comp_off_approver_role()
+		self.assertEqual(frappe.db.count("Has Role", {"role": comp_off.APPROVER_ROLE}), before)
+		self.assertEqual(frappe.db.get_value("Role", comp_off.APPROVER_ROLE, "desk_access"), 0)
+		profile = frappe.get_doc("Role Profile", comp_off.APPROVER_ROLE)
+		self.assertEqual([row.role for row in profile.roles], [comp_off.APPROVER_ROLE])
+		self.assertIsNone(comp_off._company_approver())
+
+	def test_hr_roles_alone_do_not_grant_company_approval(self):
+		request = self.create()
+		frappe.set_user("Administrator")
+		frappe.get_doc("User", self.other.user_id).add_roles("HR Manager", "HR User", "Leave Approver")
+		frappe.set_user(self.other.user_id)
+		self.assertFalse(comp_off.get_context()["is_company_approver"])
+		self.assertEqual(comp_off.get_requests(team=1), [])
+		with self.assertRaises(frappe.PermissionError):
+			comp_off.decide_request(request["name"], "Approved")
+
+	def test_role_provisioning_rejects_conflicting_metadata(self):
+		frappe.set_user("Administrator")
+		create_comp_off_approver_role()
+		frappe.db.set_value("Role", comp_off.APPROVER_ROLE, "desk_access", 1)
+		with self.assertRaises(frappe.ValidationError):
+			create_comp_off_approver_role()
+		frappe.db.set_value("Role", comp_off.APPROVER_ROLE, "desk_access", 0)
+		profile = frappe.get_doc("Role Profile", comp_off.APPROVER_ROLE)
+		profile.append("roles", {"role": "HR Manager"})
+		profile.save()
+		with self.assertRaises(frappe.ValidationError):
+			create_comp_off_approver_role()
+
+	def test_additive_profile_grant_survives_user_save(self):
+		request = self.create()
+		frappe.set_user("Administrator")
+		create_comp_off_approver_role()
+		profile = frappe.get_doc(
+			{
+				"doctype": "Role Profile",
+				"role_profile": "_Test Existing Comp Off Profile",
+				"roles": [{"role": "Employee"}],
+			}
+		).insert()
+		user = frappe.get_doc("User", self.other.user_id)
+		user.append("role_profiles", {"role_profile": profile.name})
+		user.save()
+		before_roles = {row.role for row in user.roles}
+		user.append("role_profiles", {"role_profile": comp_off.APPROVER_ROLE})
+		user.save()
+		user.reload()
+		self.assertEqual({row.role for row in user.roles}, before_roles | {comp_off.APPROVER_ROLE})
+		self.assertEqual(
+			{row.role_profile for row in user.role_profiles}, {profile.name, comp_off.APPROVER_ROLE}
+		)
+		user.save()
+		frappe.set_user(self.other.user_id)
+		self.assertTrue(comp_off.get_requests(team=1)[0]["can_approve"])
+		self.assertEqual(comp_off.decide_request(request["name"], "Approved")["status"], "Approved")
 
 	def test_enabled_native_hr_compatibility_keeps_portal_records_protected(self):
 		native_doc = frappe.new_doc(comp_off.DOCTYPE)
@@ -503,8 +683,17 @@ class TestCompOffPortal(HRMSTestSuite):
 		result = _run_concurrency_acceptance(self)
 		self.assertEqual(result["result"], "PASS")
 
+	@skipUnless(
+		os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("HRMS_CONCURRENCY_ACCEPTANCE") == "1",
+		"Separate CI-only concurrent transaction acceptance",
+	)
+	def test_manager_and_company_approver_race_credits_once(self):
+		self.grant_company_approver()
+		result = _run_concurrency_acceptance(self, company_approver=self.other.user_id)
+		self.assertEqual(result["result"], "PASS")
 
-def _run_concurrency_acceptance(case):
+
+def _run_concurrency_acceptance(case, company_approver=None):
 	"""Four independent DB connections; ONLY the disposable GitHub CI test site.
 
 	Fixtures intentionally commit so real competing transactions can see them.
@@ -533,7 +722,9 @@ def _run_concurrency_acceptance(case):
 				try:
 					frappe.flags.in_test = True
 					frappe.conf.enable_comp_off_self_service = 1
-					frappe.set_user(employee_user if task[0] == "create" else manager_user)
+					frappe.set_user(
+						employee_user if task[0] == "create" else (task[2] if len(task) > 2 else manager_user)
+					)
 					if attempt == 0:
 						barrier.wait(timeout=30)
 					if task[0] == "create":
@@ -560,9 +751,9 @@ def _run_concurrency_acceptance(case):
 	frappe.db.commit()  # nosemgrep: make second work date visible to competing reviewers
 	decisions = parallel(
 		[
+			("approve", created[0]["name"], company_approver or manager_user),
 			("approve", created[0]["name"]),
-			("approve", created[0]["name"]),
-			("approve", earlier["name"]),
+			("approve", earlier["name"], company_approver or manager_user),
 			("approve", earlier["name"]),
 		]
 	)
