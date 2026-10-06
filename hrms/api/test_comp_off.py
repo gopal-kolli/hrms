@@ -203,6 +203,9 @@ class TestCompOffPortal(HRMSTestSuite):
 			self.assertFalse(comp_off.has_permission(doc, ptype=permission))
 		with self.assertRaises(frappe.PermissionError):
 			doc.save(ignore_permissions=True)
+		# A failed save updates the in-memory timestamp; test submit from a fresh
+		# document so the permission guard is reached instead of the stale-write guard.
+		doc = frappe.get_doc(comp_off.DOCTYPE, request["name"])
 		with self.assertRaises(frappe.PermissionError):
 			doc.submit()
 
