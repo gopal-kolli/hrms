@@ -82,11 +82,11 @@
 							__("Comp-off history")
 						}}</router-link>
 						<router-link
-							v-if="isManager && compOffEnabled"
+							v-if="canReviewCompOff && compOffEnabled"
 							:to="{ name: 'CompOffListView', query: { view: 'approval' } }"
 							class="mobile-manager-link"
-							:aria-label="__('Review team Comp Off requests')"
-							><FeatherIcon name="users" class="h-4 w-4" />{{ __("Team requests") }}</router-link
+							:aria-label="__('Review Comp Off requests')"
+							><FeatherIcon name="users" class="h-4 w-4" />{{ __("For approval") }}</router-link
 						>
 					</nav>
 				</section>
@@ -169,11 +169,11 @@
 						</p>
 						<p v-else class="request-empty">{{ __("No Comp Off credit requests yet.") }}</p>
 						<router-link
-							v-if="isManager"
+							v-if="canReviewCompOff"
 							:to="{ name: 'CompOffListView', query: { view: 'approval' } }"
 							class="manager-queue"
 							><FeatherIcon name="users" class="h-4 w-4" />{{
-								__("Review team Comp Off requests")
+								__("Review Comp Off requests")
 							}}</router-link
 						>
 					</section>
@@ -230,7 +230,9 @@ const bootFlag = window.frappe?.boot?.comp_off_self_service
 const compOffEnabled = computed(
 	() => bootEnablesCompOff() || compOffContext.data?.enabled === true
 )
-const isManager = computed(() => compOffContext.data?.is_manager === true)
+const canReviewCompOff = computed(
+	() => compOffContext.data?.is_manager === true || compOffContext.data?.is_company_approver === true
+)
 const employeeName = computed(() => employee?.data?.first_name || __("Employee"))
 const today = computed(() => dayjs().format("dddd, D MMMM"))
 const formatDate = (date) => dayjs(date).format("D MMM")

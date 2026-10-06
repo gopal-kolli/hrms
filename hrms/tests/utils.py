@@ -26,6 +26,7 @@ class BootStrapTestData:
 		self.make_salary_components()
 		self.update_email_account_settings()
 		self.update_system_settings()
+		self.update_hr_settings()
 		# TODO: clean up
 		if frappe.db.get_value("Holiday List Assignment", {"assigned_to": "_Test Company"}, "docstatus") == 0:
 			frappe.get_doc("Holiday List Assignment", {"assigned_to": "_Test Company"}).submit()
@@ -227,6 +228,7 @@ class BootStrapTestData:
 				"leave_type": "_Test Leave Type",
 				"posting_date": "2013-01-02",
 				"to_date": "2013-05-05",
+				"leave_approver": "Administrator",
 			},
 			{
 				"company": "_Test Company",
@@ -237,6 +239,7 @@ class BootStrapTestData:
 				"leave_type": "_Test Leave Type",
 				"posting_date": "2013-01-02",
 				"to_date": "2013-05-05",
+				"leave_approver": "Administrator",
 			},
 			{
 				"company": "_Test Company",
@@ -247,6 +250,7 @@ class BootStrapTestData:
 				"leave_type": "_Test Leave Type LWP",
 				"posting_date": "2013-01-02",
 				"to_date": "2013-01-15",
+				"leave_approver": "Administrator",
 			},
 		]
 		self.make_records(["employee", "from_date"], records)
@@ -339,6 +343,9 @@ class BootStrapTestData:
 		system_settings.country = "India"
 		system_settings.save()
 
+	def update_hr_settings(self):
+		frappe.db.set_single_value("HR Settings", "leave_approver_mandatory_in_leave_application", 0)
+
 	def make_records(self, key, records):
 		doctype = records[0].get("doctype")
 
@@ -364,3 +371,32 @@ class HRMSTestSuite(ERPNextTestSuite):
 	"""Class for creating HRMS test records"""
 
 	pass
+
+
+def make_user(email: str, role: str = "HR Manager") -> str:
+	if not frappe.db.exists("User", email):
+		frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": email,
+				"first_name": email.split("@")[0],
+				"send_welcome_email": 0,
+			}
+		).insert()
+	frappe.get_doc("User", email).add_roles(role)
+	return email
+
+
+def make_company_restricted_user(email: str, company: str, role: str = "HR Manager") -> str:
+	make_user(email, role)
+	if not frappe.db.exists("User Permission", {"user": email, "allow": "Company", "for_value": company}):
+		frappe.get_doc(
+			{
+				"doctype": "User Permission",
+				"user": email,
+				"allow": "Company",
+				"for_value": company,
+				"apply_to_all_doctypes": 1,
+			}
+		).insert()
+	return email
