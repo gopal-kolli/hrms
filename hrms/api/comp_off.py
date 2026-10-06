@@ -1,4 +1,4 @@
-"""Opt-in employee comp-off credit requests; manager approval uses the native ledger.
+"""Opt-in comp-off requests; managers and designated HR approvers use the native ledger.
 
 Enable with enable_comp_off_self_service after migration and verified TEST evidence.
 The API never accepts an employee, approver, leave type, credit amount or status from
@@ -17,6 +17,7 @@ from hrms.hr.utils import get_holidays_for_employee, get_leave_period
 
 DOCTYPE = "Compensatory Leave Request"
 LEAVE_TYPE = "Compensatory Off"
+APPROVER_ROLE = "Comp Off Approver"
 FIELDS = [
 	"name",
 	"employee",
@@ -43,7 +44,7 @@ def enabled():
 def _require_enabled():
 	if not enabled():
 		frappe.throw(_("Comp-off credit requests are not enabled. Please contact HR."))
-	if frappe.session.user == "Guest":
+	if frappe.session.user == "Guest" or not frappe.db.get_value("User", frappe.session.user, "enabled"):
 		frappe.throw(_("Please sign in."), frappe.PermissionError)
 
 
@@ -80,10 +81,40 @@ def _manager(employee):
 
 
 def _can_approve(employee):
+	if employee.user_id == frappe.session.user:
+		return False
+	approver = _company_approver()
+	if approver and approver.name != employee.name and approver.company == employee.company:
+		return True
 	manager = _manager(employee)
 	return bool(
 		manager and manager.user_id == frappe.session.user and employee.user_id != frappe.session.user
 	)
+
+
+def _company_approver():
+	"""Require an explicit grant, enabled login and one active employee identity.
+
+	Read the grant from the database so a stale role cache cannot retain authority.
+	Administrator's implicit roles do not constitute a company approval grant.
+	"""
+	user = frappe.session.user
+	if (
+		user in ("Guest", "Administrator")
+		or not frappe.db.get_value("User", user, "enabled")
+		or not frappe.db.exists("Role", {"name": APPROVER_ROLE, "disabled": 0})
+		or not frappe.db.exists(
+			"Has Role", {"parent": user, "parenttype": "User", "parentfield": "roles", "role": APPROVER_ROLE}
+		)
+	):
+		return None
+	rows = frappe.get_all(
+		"Employee",
+		filters={"user_id": user, "status": "Active"},
+		fields=["name", "company"],
+		limit=2,
+	)
+	return rows[0] if len(rows) == 1 and rows[0].company else None
 
 
 def _employee_by_name(name):
@@ -214,6 +245,7 @@ def get_context() -> dict:
 		"employee": {"name": employee.name, "employee_name": employee.employee_name},
 		"manager": {"user_id": manager.user_id, "employee_name": manager.employee_name} if manager else None,
 		"is_manager": bool(frappe.db.exists("Employee", {"reports_to": employee.name, "status": "Active"})),
+		"is_company_approver": bool(_company_approver()),
 		"leave_type": LEAVE_TYPE,
 		"eligible_dates": eligible,
 	}
@@ -224,14 +256,16 @@ def get_requests(team: int = 0) -> list[dict]:
 	_require_enabled()
 	employee = _employee()
 	if cint(team):
+		filters = {
+			"status": "Active",
+			"company": employee.company,
+			"name": ["!=", employee.name],
+		}
+		if not _company_approver():
+			filters["reports_to"] = employee.name
 		employees = frappe.get_all(
 			"Employee",
-			filters={
-				"reports_to": employee.name,
-				"status": "Active",
-				"company": employee.company,
-				"name": ["!=", employee.name],
-			},
+			filters=filters,
 			pluck="name",
 		)
 	else:
@@ -314,7 +348,9 @@ def decide_request(name: str, decision: str, reason: str = "") -> dict:
 	employee_name = frappe.db.get_value(DOCTYPE, name, "employee")
 	if not employee_name or not _can_approve(_employee_by_name(employee_name)):
 		frappe.throw(
-			_("Only this employee's current reporting manager can review the request."),
+			_(
+				"Only the current reporting manager or a designated company comp-off approver can review this request."
+			),
 			frappe.PermissionError,
 		)
 	_lock_employee(employee_name)
