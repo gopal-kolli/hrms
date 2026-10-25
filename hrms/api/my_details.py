@@ -485,6 +485,8 @@ def submit_request(request: str, consent: bool = False) -> dict:
 	_enabled()
 	emp = _employee(lock=True)
 	doc = _request(request, emp, lock=True)
+	if doc.status == "Withdrawn":
+		frappe.throw(_("This draft was discarded. Start a new request."))
 	if doc.status != "Draft":
 		return _result(doc)
 	if not cint(consent):

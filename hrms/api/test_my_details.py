@@ -122,7 +122,7 @@ class TestMyDetails(HRMSTestSuite):
 		return my_details._store_proof(doc, kind, self.pdf(), f"{kind}.pdf")
 
 	def submit(self, request):
-		return my_details.submit_request(request["name"], consent=1)
+		return my_details.submit_request(request["name"], consent=True)
 
 	def review(self, request):
 		frappe.set_user(self.reviewer.user_id)
@@ -156,7 +156,7 @@ class TestMyDetails(HRMSTestSuite):
 		with self.assertRaises(frappe.PermissionError):
 			frappe.get_list(my_details.DOCTYPE, pluck="name")
 		for call in (
-			lambda: my_details.submit_request(request["name"], consent=1),
+			lambda: my_details.submit_request(request["name"], consent=True),
 			lambda: my_details.download_proof(request["name"], "pan"),
 			lambda: my_details.review_request(request["name"]),
 		):
