@@ -164,6 +164,11 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	"File": {
+		"before_insert": "hrms.api.my_details.guard_file",
+		"before_validate": "hrms.api.my_details.guard_file",
+		"on_trash": "hrms.api.my_details.guard_file",
+	},
 	"User": {
 		"validate": [
 			"erpnext.setup.doctype.employee.employee.validate_employee_role",
@@ -410,8 +415,10 @@ repost_allowed_doctypes = ["Expense Claim"]
 
 # Employee portal comp-off requests remain private even if the feature is disabled.
 permission_query_conditions = {
+	"Employee Detail Change Request": "hrms.api.my_details.permission_query",
 	"Compensatory Leave Request": "hrms.api.comp_off.get_permission_query_conditions",
 }
 has_permission = {
+	"Employee Detail Change Request": "hrms.api.my_details.has_permission",
 	"Compensatory Leave Request": "hrms.api.comp_off.has_permission",
 }
