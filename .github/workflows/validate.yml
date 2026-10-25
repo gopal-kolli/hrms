@@ -31,6 +31,8 @@ jobs:
       - name: Compile and lint changed backend
         run: |
           pip install ruff frappe-bench
+          python -m compileall -q hrms/api/my_details.py hrms/api/test_my_details.py
+          ruff check hrms/api/my_details.py hrms/api/test_my_details.py hrms/patches/v16_0/create_my_details_fields.py
           python -m compileall -q hrms/api/comp_off.py hrms/api/comp_off_recovery.py hrms/api/test_comp_off.py
           ruff check hrms/api/comp_off.py hrms/api/comp_off_recovery.py hrms/api/test_comp_off.py hrms/www/hrms.py
           python -m compileall -q hrms/hr/doctype/leave_adjustment
@@ -47,6 +49,7 @@ jobs:
       - name: Run native security and ledger tests
         run: |
           cd ~/frappe-bench
+          bench --site test_site run-tests --app hrms --module hrms.api.test_my_details
           bench --site test_site run-tests --app hrms --module hrms.api.test_comp_off
           bench --site test_site run-tests --app hrms --module hrms.hr.doctype.compensatory_leave_request.test_compensatory_leave_request
           bench --site test_site run-tests --app hrms --module hrms.hr.doctype.leave_adjustment.test_leave_adjustment

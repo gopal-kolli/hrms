@@ -9,6 +9,7 @@ import salarySlipRoutes from "./salary_slips"
 import compOffRoutes from "./comp_off"
 
 const routes = [
+	{ path: "/my-details", name: "MyDetails", component: () => import("@/views/MyDetails.vue") },
 	{
 		path: "/",
 		redirect: "/home",

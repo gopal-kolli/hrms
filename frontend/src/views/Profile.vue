@@ -7,11 +7,7 @@
 						class="flex flex-row bg-white shadow-sm py-4 px-3 items-center justify-between border-b sticky top-0 z-10"
 					>
 						<div class="flex flex-row items-center">
-							<Button
-								variant="ghost"
-								class="!pl-0 hover:bg-white"
-								@click="router.back()"
-							>
+							<Button variant="ghost" class="!pl-0 hover:bg-white" @click="router.back()">
 								<FeatherIcon name="chevron-left" class="h-5 w-5" />
 							</Button>
 							<h2 class="text-xl font-semibold text-gray-900">{{ __("Profile") }}</h2>
@@ -42,6 +38,13 @@
 							}}</span>
 						</div>
 
+						<router-link
+							v-if="profile.data?.my_details_enabled"
+							:to="{ name: 'MyDetails' }"
+							class="my-details-entry"
+							>{{ __("My Details")
+							}}<span>{{ __("Bank, identity, contact and nominee details") }}</span></router-link
+						>
 						<!-- Profile Links -->
 						<div class="flex flex-col gap-5 my-4 w-full">
 							<div class="flex flex-col bg-white rounded">
@@ -52,54 +55,35 @@
 									@click="openInfoModal(link)"
 								>
 									<div class="flex flex-row items-center gap-3 grow">
-										<FeatherIcon
-											:name="link.icon"
-											class="h-5 w-5 text-gray-500"
-										/>
+										<FeatherIcon :name="link.icon" class="h-5 w-5 text-gray-500" />
 										<div class="text-base font-normal text-gray-800">
 											{{ link.title }}
 										</div>
 									</div>
-									<FeatherIcon
-										name="chevron-right"
-										class="h-5 w-5 text-gray-500"
-									/>
+									<FeatherIcon name="chevron-right" class="h-5 w-5 text-gray-500" />
 								</div>
 							</div>
 						</div>
 
 						<!-- Settings -->
-						<div
-							class="flex flex-col gap-5 my-4 w-full"
-						>
+						<div class="flex flex-col gap-5 my-4 w-full">
 							<div class="flex flex-col bg-white rounded">
 								<router-link
 									:to="{ name: 'Settings' }"
 									class="flex flex-row cursor-pointer flex-start p-4 items-center justify-between border-b"
 								>
 									<div class="flex flex-row items-center gap-3 grow">
-										<FeatherIcon
-											name="settings"
-											class="h-5 w-5 text-gray-500"
-										/>
+										<FeatherIcon name="settings" class="h-5 w-5 text-gray-500" />
 										<div class="text-base font-normal text-gray-800">
 											{{ __("Settings") }}
 										</div>
 									</div>
-									<FeatherIcon
-										name="chevron-right"
-										class="h-5 w-5 text-gray-500"
-									/>
+									<FeatherIcon name="chevron-right" class="h-5 w-5 text-gray-500" />
 								</router-link>
 							</div>
 						</div>
 
-						<Button
-							@click="logout"
-							variant="outline"
-							theme="red"
-							class="w-full shadow py-4 mt-5"
-						>
+						<Button @click="logout" variant="outline" theme="red" class="w-full shadow py-4 mt-5">
 							<template #prefix>
 								<FeatherIcon name="log-out" class="w-4" />
 							</template>
@@ -132,9 +116,8 @@
 					"
 				/>
 			</ion-modal>
-
-	</ion-content>
-</ion-page>
+		</ion-content>
+	</ion-page>
 </template>
 
 <script setup>
@@ -189,28 +172,12 @@ const profileLinks = [
 	{
 		icon: "book",
 		title: __("Contact Information"),
-		fields: [
-			"cell_number",
-			"personal_email",
-			"company_email",
-			"preferred_email",
-		],
+		fields: ["cell_number", "personal_email", "company_email", "preferred_email"],
 	},
 	{
 		icon: "dollar-sign",
 		title: __("Salary Information"),
-		fields: [
-			"ctc",
-			"payroll_cost_center",
-			"pan_number",
-			"provident_fund_account",
-			"salary_mode",
-			"bank_name",
-			"bank_ac_no",
-			"ifsc_code",
-			"micr_code",
-			"iban",
-		],
+		fields: ["ctc", "payroll_cost_center", "salary_mode"],
 	},
 ]
 
@@ -218,9 +185,7 @@ const isInfoModalOpen = ref(false)
 const selectedItem = ref(null)
 
 const allowPushNotifications = computed(
-	() =>
-		window.frappe?.boot.push_relay_server_url &&
-		arePushNotificationsEnabled.data
+	() => window.frappe?.boot.push_relay_server_url && arePushNotificationsEnabled.data
 )
 
 const openInfoModal = async (request) => {
@@ -233,51 +198,23 @@ const closeInfoModal = async (_request) => {
 	selectedItem.value = null
 }
 
-const employeeDoc = createDocumentResource({
-	doctype: DOCTYPE,
-	name: employee.data.name,
-	fields: "*",
-	auto: true,
-	transform: (data) => {
-		data.ctc = formatCurrency(data.ctc, data.salary_currency)
-		return data
-	},
-})
-
-const reportsToName = createResource({
-	url: "hrms.api.get_reports_to_employee_name",
-})
-
-watch(
-	() => employeeDoc.doc?.reports_to,
-	(reports_to) => {
-		if (reports_to) {
-			reportsToName.submit({ employee: reports_to })
-		}
-	}
-)
-
-const employeeDocType = createResource({
-	url: "hrms.api.get_doctype_fields",
-	params: { doctype: DOCTYPE },
-	auto: true,
-})
+const profile = createResource({ url: "hrms.api.my_details.get_profile", auto: true })
 
 const getFieldInfo = (fieldname) => {
-	const field = employeeDocType.data.find(
-		(field) => field.fieldname === fieldname
-	)
+	const field = (profile.data?.fields || []).find((field) => field.fieldname === fieldname)
 	return [__(field?.label, null, "Employee"), field?.fieldtype]
 }
 
 const getFieldValue = (fieldname) => {
-	if (fieldname === "employee_number" && !employeeDoc.doc[fieldname]) {
-		return employeeDoc.doc["name"]
+	if (fieldname === "ctc")
+		return formatCurrency(profile.data?.values?.ctc, profile.data?.values?.salary_currency)
+	if (fieldname === "employee_number" && !profile.data?.values?.[fieldname]) {
+		return employee.data?.name
 	}
 	if (fieldname === "reports_to") {
-		return reportsToName.data || employeeDoc.doc[fieldname]
+		return profile.data?.values?.[fieldname]
 	}
-	return employeeDoc.doc[fieldname]
+	return profile.data?.values?.[fieldname]
 }
 
 const logout = async () => {
@@ -290,13 +227,11 @@ const logout = async () => {
 	}
 }
 
-
-
 onMounted(() => {
 	socket.emit("doctype_subscribe", DOCTYPE)
 	socket.on("list_update", (data) => {
 		if (data.doctype === DOCTYPE && data.name === employee.data.name) {
-			employeeDoc.reload()
+			profile.reload()
 		}
 	})
 })
@@ -306,3 +241,26 @@ onBeforeUnmount(() => {
 	socket.off("list_update")
 })
 </script>
+
+<style scoped>
+.my-details-entry {
+	display: block;
+	width: 100%;
+	padding: 16px;
+	color: #006b64;
+	border: 1px solid #c9deda;
+	border-radius: 10px;
+	font-weight: 700;
+}
+.my-details-entry span {
+	display: block;
+	margin-top: 6px;
+	font-size: 0.85rem;
+	font-weight: 400;
+	color: #547076;
+}
+.my-details-entry:focus-visible {
+	outline: 3px solid #7cb5ac;
+	outline-offset: 3px;
+}
+</style>
