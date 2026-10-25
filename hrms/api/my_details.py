@@ -242,6 +242,11 @@ def guard_file(doc, method=None):
 	previous = frappe.db.get_value("File", doc.name, "attached_to_doctype") if not doc.is_new() else None
 	if DOCTYPE in (doc.attached_to_doctype, previous):
 		guard_write(doc)
+		# Document.insert assigns the session user before before_insert. Only the
+		# service-authorised exact File object may replace that owner, so native
+		# File owner access never bypasses the parent-bound download endpoint.
+		if method == "before_insert":
+			doc.owner = "Administrator"
 		if not doc.is_private or doc.owner != "Administrator":
 			frappe.throw(_("Profile proof must remain private."), frappe.PermissionError)
 

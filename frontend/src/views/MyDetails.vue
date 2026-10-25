@@ -199,7 +199,8 @@
 							<h2 id="submit-heading">{{ __("Send your changes for review") }}</h2>
 							<p>
 								{{ changedFields.length }}
-								{{ __("details selected. HR will compare these with your approved record.") }}
+								{{ changedFields.length === 1 ? __("detail selected.") : __("details selected.") }}
+								{{ __("HR will compare these with your approved record.") }}
 							</p>
 							<p v-if="retryOf">
 								{{

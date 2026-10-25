@@ -132,7 +132,7 @@ class TestMyDetails(HRMSTestSuite):
 			content_type="application/pdf",
 		)
 		fake_request = frappe._dict(files=frappe._dict(file=storage))
-		with patch.object(frappe.local, "request", fake_request):
+		with patch.object(frappe.local, "request", fake_request, create=True):
 			return my_details.upload_proof(request["name"], kind)
 
 	def submit(self, request):
@@ -407,6 +407,23 @@ class TestMyDetails(HRMSTestSuite):
 			frappe.delete_doc(my_details.DOCTYPE, first["name"], ignore_permissions=True)
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc("File", first_file.name, ignore_permissions=True)
+
+	def test_file_guard_preserves_unrelated_attachment_lifecycle(self):
+		file = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"unrelated-{self.ident}.txt",
+				"content": "Synthetic unrelated attachment",
+				"is_private": 1,
+				"attached_to_doctype": "Employee",
+				"attached_to_name": self.employee.name,
+			}
+		).insert(ignore_permissions=True)
+		self.assertEqual(file.owner, self.employee.user_id)
+		file.file_name = f"renamed-{self.ident}.txt"
+		file.save(ignore_permissions=True)
+		frappe.delete_doc("File", file.name, ignore_permissions=True)
+		self.assertFalse(frappe.db.exists("File", file.name))
 
 	def test_paired_pan_ifsc_and_available_native_statutory_fields_apply_together(self):
 		changes = {"pan": "BBBBB1234B", "ifsc": "HDFC0001234"}
