@@ -7,8 +7,12 @@ mail, scheduler, or external endpoint is used.
 
 import io
 import json
+import os
+from unittest import skipUnless
+from unittest.mock import patch
 
 from pypdf import PdfWriter
+from werkzeug.datastructures import FileStorage
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -121,6 +125,16 @@ class TestMyDetails(HRMSTestSuite):
 		doc = frappe.get_doc(my_details.DOCTYPE, request["name"])
 		return my_details._store_proof(doc, kind, self.pdf(), f"{kind}.pdf")
 
+	def upload_file(self, request, kind, content=None, filename=None):
+		storage = FileStorage(
+			stream=io.BytesIO(content if content is not None else self.pdf()),
+			filename=filename or f"{kind}.pdf",
+			content_type="application/pdf",
+		)
+		fake_request = frappe._dict(files=frappe._dict(file=storage))
+		with patch.object(frappe.local, "request", fake_request):
+			return my_details.upload_proof(request["name"], kind)
+
 	def submit(self, request):
 		return my_details.submit_request(request["name"], consent=True)
 
@@ -197,6 +211,177 @@ class TestMyDetails(HRMSTestSuite):
 		self.assertEqual(pending["status"], "Pending review")
 		self.assertEqual(self.submit(request), pending)
 		self.assertEqual(self.value(self.employee, "city"), "Old City")
+
+	def test_hr_cannot_list_read_review_or_download_draft_or_withdrawn_requests(self):
+		request = self.begin({"pan": "BBBBB1234B"})
+		self.add_proof(request, "pan")
+
+		def assert_hidden_from_hr():
+			frappe.set_user(self.reviewer.user_id)
+			doc = frappe.get_doc(my_details.DOCTYPE, request["name"])
+			self.assertFalse(my_details.has_permission(doc, "read", self.reviewer.user_id))
+			self.assertNotIn(
+				request["name"],
+				frappe.get_list(my_details.DOCTYPE, filters={"name": request["name"]}, pluck="name"),
+			)
+			with self.assertRaises(frappe.PermissionError):
+				my_details.review_request(request["name"])
+			with self.assertRaises(frappe.PermissionError):
+				my_details.download_proof(request["name"], "pan")
+
+		assert_hidden_from_hr()
+		frappe.set_user(self.employee.user_id)
+		self.assertEqual(my_details.discard_draft(request["name"])["status"], "Withdrawn")
+		assert_hidden_from_hr()
+
+	def test_inactive_duplicate_warns_and_requires_acknowledgement_but_does_not_block(self):
+		self.other.db_set("status", "Inactive")
+		request = self.begin({"pan": "ZZZZZ9999Z"})
+		self.add_proof(request, "pan")
+		self.submit(request)
+		review = self.review(request)
+		self.assertEqual(review["blockers"], [])
+		self.assertTrue(any("inactive employee" in warning for warning in review["warnings"]))
+		with self.assertRaises(frappe.ValidationError):
+			my_details.decide_request(
+				request["name"], "Approved", review["review_token"], ["pan"], "Verified"
+			)
+		approved = my_details.decide_request(
+			request["name"],
+			"Approved",
+			review["review_token"],
+			["pan"],
+			"Verified",
+			acknowledge_warnings=True,
+		)
+		self.assertEqual(approved["status"], "Approved")
+		self.assertEqual(self.value(self.employee, "pan"), "ZZZZZ9999Z")
+
+	def test_five_recent_historical_requests_enforce_24_hour_quota(self):
+		for index in range(5):
+			doc = frappe.get_doc(
+				{
+					"doctype": my_details.DOCTYPE,
+					"name": f"EDC-QUOTA-{self.ident}-{index}",
+					"employee": self.employee.name,
+					"company": self.employee.company,
+					"requested_by": self.employee.user_id,
+					"status": "Withdrawn",
+					"changes_json": json.dumps({"city": f"Quota City {index}"}),
+					"baseline_json": json.dumps({self.target("city"): "Old City"}),
+				}
+			)
+			my_details._save(doc, new=True)
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.begin({"city": "Sixth City"})
+		self.assertIn("recent request limit", str(caught.exception))
+
+	def test_historical_result_keeps_labels_when_a_target_field_is_no_longer_in_metadata(self):
+		request = self.begin({"city": "Historical City"})
+		doc = frappe.get_doc(my_details.DOCTYPE, request["name"])
+		fields = my_details._fields()
+		fields["city"] = fields["city"] | {"targets": []}
+		with patch.object(my_details, "_fields", return_value=fields):
+			result = my_details._result(doc)
+		self.assertEqual(result["changes"], [{"key": "city", "label": "City", "value": "Historical City"}])
+
+	def test_upload_endpoint_rejects_missing_wrong_or_cross_employee_proofs(self):
+		request = self.begin({"pan": "BBBBB1234B"})
+		with self.assertRaises(frappe.ValidationError):
+			self.submit(request)
+		with self.assertRaises(frappe.PermissionError):
+			self.upload_file(request, "bank")
+		frappe.set_user(self.other.user_id)
+		with self.assertRaises(frappe.PermissionError):
+			self.upload_file(request, "pan")
+		frappe.set_user(self.employee.user_id)
+		self.assertEqual(self.upload_file(request, "pan"), {"kind": "pan", "saved": True})
+		with self.assertRaises(frappe.ValidationError):
+			self.upload_file(request, "pan", content=b"not a PDF", filename="pan.pdf")
+		self.assertEqual(self.submit(request)["status"], "Pending review")
+
+	def test_duplicate_identity_is_blocked_without_disclosing_other_employee_details(self):
+		request = self.begin({"pan": "ZZZZZ9999Z"})
+		self.add_proof(request, "pan")
+		self.submit(request)
+		review = self.review(request)
+		self.assertTrue(any("PAN" in blocker for blocker in review["blockers"]))
+		self.assertNotIn(self.other.name, " ".join(review["blockers"]))
+		self.assertNotIn(self.other.employee_name, " ".join(review["blockers"]))
+		with self.assertRaises(frappe.ValidationError) as caught:
+			my_details.decide_request(
+				request["name"], "Approved", review["review_token"], ["pan"], "Verified"
+			)
+		message = str(caught.exception)
+		self.assertIn("already recorded", message)
+		self.assertNotIn(self.other.name, message)
+		self.assertNotIn(self.other.employee_name, message)
+		self.assertEqual(self.value(self.employee, "pan"), "ABCDE1234F")
+
+	def test_approval_and_correction_do_not_enqueue_mail(self):
+		before = frappe.db.count("Email Queue")
+		request = self.begin({"city": "No Mail City"})
+		self.submit(request)
+		review = self.review(request)
+		my_details.decide_request(request["name"], "Approved", review["review_token"], ["city"], "Verified")
+		self.assertEqual(frappe.db.count("Email Queue"), before)
+		frappe.set_user(self.employee.user_id)
+		correction = self.begin({"state": "No Mail State"})
+		self.submit(correction)
+		review = self.review(correction)
+		my_details.decide_request(
+			correction["name"], "Needs correction", review["review_token"], [], "Please clarify state"
+		)
+		self.assertEqual(frappe.db.count("Email Queue"), before)
+
+	def test_guest_disabled_and_ambiguous_employee_mappings_are_denied(self):
+		frappe.set_user("Guest")
+		with self.assertRaises(frappe.PermissionError):
+			my_details.get_context()
+		frappe.set_user(self.employee.user_id)
+		frappe.db.set_value("User", self.employee.user_id, "enabled", 0)
+		with self.assertRaises(frappe.PermissionError):
+			my_details.get_context()
+		frappe.db.set_value("User", self.employee.user_id, "enabled", 1)
+		self.other.db_set("user_id", self.employee.user_id)
+		with self.assertRaises(frappe.PermissionError):
+			my_details.get_context()
+
+	def test_proof_cannot_be_made_public_reparented_or_read_through_native_file_acl(self):
+		request = self.begin({"pan": "BBBBB1234B"})
+		self.add_proof(request, "pan")
+		file = frappe.get_doc("File", frappe.get_value(my_details.DOCTYPE, request["name"], "pan_proof"))
+		frappe.set_user("Administrator")
+		file.is_private = 0
+		with self.assertRaises(frappe.PermissionError):
+			file.save(ignore_permissions=True)
+		file.reload()
+		file.attached_to_name = self.other.name
+		with self.assertRaises(frappe.PermissionError):
+			file.save(ignore_permissions=True)
+		file.reload()
+		from frappe.core.doctype.file.file import has_permission as native_file_has_permission
+
+		self.assertFalse(native_file_has_permission(file, "read", self.other.user_id))
+
+	def test_stale_alias_and_mapping_are_rejected_before_apply(self):
+		pan_targets = my_details._fields()["pan"]["targets"]
+		if len(pan_targets) < 2:
+			self.skipTest("This HRMS version has only one PAN storage alias")
+		request = self.begin({"pan": "BBBBB1234B"})
+		self.add_proof(request, "pan")
+		self.submit(request)
+		review = self.review(request)
+		frappe.db.set_value("Employee", self.employee.name, pan_targets[1], "ALIAS1234A")
+		with self.assertRaises(frappe.ValidationError):
+			my_details.decide_request(
+				request["name"], "Approved", review["review_token"], ["pan"], "Verified"
+			)
+		self.assertEqual(self.value(self.employee, "pan"), "ABCDE1234F")
+		frappe.set_user(self.employee.user_id)
+		self.employee.db_set("user_id", self.other.user_id)
+		with self.assertRaises(frappe.PermissionError):
+			my_details.submit_request(request["name"], consent=True)
 
 	def test_private_proofs_are_per_request_and_raw_mutation_or_deletion_is_blocked(self):
 		first = self.begin({"pan": "BBBBB1234B"})
@@ -313,3 +498,79 @@ class TestMyDetails(HRMSTestSuite):
 			before,
 		)
 		self.assertEqual(json.loads(before.changes_json), {"city": "Corrected City"})
+
+	@skipUnless(
+		os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("HRMS_CONCURRENCY_ACCEPTANCE") == "1",
+		"Separate CI-only concurrent identity approval acceptance",
+	)
+	def test_concurrent_duplicate_pan_approval_has_exactly_one_winner(self):
+		result = _run_duplicate_pan_concurrency_acceptance(self)
+		self.assertEqual(result["result"], "PASS")
+
+
+def _run_duplicate_pan_concurrency_acceptance(case):
+	"""Use disposable CI connections only; committed fixtures make the race physical."""
+	from concurrent.futures import ThreadPoolExecutor
+	from threading import Barrier
+
+	if frappe.local.site != "test_site" or os.environ.get("GITHUB_ACTIONS") != "true":
+		raise RuntimeError("Concurrency fixture is restricted to disposable GitHub CI")
+	shared_pan = "QQQQQ1234Q"
+	frappe.set_user(case.employee.user_id)
+	first = case.begin({"pan": shared_pan}, request_id="race-first-" + case.ident)
+	case.add_proof(first, "pan")
+	case.submit(first)
+	frappe.set_user(case.other.user_id)
+	second = case.begin({"pan": shared_pan}, request_id="race-second-" + case.ident)
+	case.add_proof(second, "pan")
+	case.submit(second)
+	frappe.set_user(case.reviewer.user_id)
+	first_review = case.review(first)
+	second_review = case.review(second)
+	frappe.db.commit()  # nosemgrep: required to expose fixtures to CI-only connections
+
+	site = frappe.local.site
+	sites_path = frappe.local.sites_path
+	barrier = Barrier(2)
+
+	def approve(request, token):
+		for attempt in range(4):
+			frappe.init(site=site, sites_path=sites_path)
+			frappe.connect()
+			try:
+				frappe.flags.in_test = True
+				frappe.conf.enable_employee_my_details = 1
+				frappe.set_user(case.reviewer.user_id)
+				if attempt == 0:
+					barrier.wait(timeout=30)
+				result = my_details.decide_request(
+					request["name"], "Approved", token, ["pan"], "Concurrent verification"
+				)
+				frappe.db.commit()  # nosemgrep: separate successful HTTP transaction simulation
+				return {"outcome": "approved", "name": result["name"]}
+			except frappe.QueryDeadlockError:
+				frappe.db.rollback()
+				if attempt == 3:
+					raise
+			except frappe.ValidationError:
+				frappe.db.rollback()
+				return {"outcome": "blocked", "name": request["name"]}
+			finally:
+				frappe.destroy()
+
+	with ThreadPoolExecutor(max_workers=2) as pool:
+		outcomes = list(
+			pool.map(
+				lambda args: approve(*args),
+				[(first, first_review["review_token"]), (second, second_review["review_token"])],
+			)
+		)
+	# Start a fresh read transaction so MariaDB does not retain the pre-race snapshot.
+	frappe.db.rollback()
+	frappe.set_user("Administrator")
+	try:
+		assert [outcome["outcome"] for outcome in outcomes].count("approved") == 1, outcomes
+		assert frappe.db.count("Employee", {case.target("pan"): shared_pan, "status": "Active"}) == 1
+		return {"approvals": 1, "blocked_duplicates": 1, "result": "PASS"}
+	finally:
+		frappe.db.rollback()

@@ -50,6 +50,7 @@ jobs:
         run: |
           cd ~/frappe-bench
           bench --site test_site run-tests --app hrms --module hrms.api.test_my_details
+          HRMS_CONCURRENCY_ACCEPTANCE=1 bench --site test_site run-tests --app hrms --module hrms.api.test_my_details --test test_concurrent_duplicate_pan_approval_has_exactly_one_winner
           bench --site test_site run-tests --app hrms --module hrms.api.test_comp_off
           bench --site test_site run-tests --app hrms --module hrms.hr.doctype.compensatory_leave_request.test_compensatory_leave_request
           bench --site test_site run-tests --app hrms --module hrms.hr.doctype.leave_adjustment.test_leave_adjustment

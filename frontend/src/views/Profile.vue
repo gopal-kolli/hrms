@@ -172,7 +172,7 @@ const profileLinks = [
 	{
 		icon: "book",
 		title: __("Contact Information"),
-		fields: ["cell_number", "personal_email", "company_email", "preferred_email"],
+		fields: ["cell_number", "personal_email", "company_email", "prefered_contact_email"],
 	},
 	{
 		icon: "dollar-sign",

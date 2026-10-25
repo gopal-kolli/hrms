@@ -42,9 +42,15 @@ frappe.ui.form.on("Employee Detail Change Request", {
 										"Approved details changed since this request. Ask the employee to correct and resubmit."
 								  )
 								: ""
-						}${review.blockers.map(esc).join("<br>")}</p>`,
+						}${[...review.blockers, ...review.warnings].map(esc).join("<br>")}</p>`,
 					},
 					...rows,
+					{
+						fieldname: "acknowledge_warnings",
+						fieldtype: "Check",
+						label: __("I verified the inactive-employee duplicate warnings"),
+						hidden: !review.warnings.length,
+					},
 					{
 						fieldname: "note",
 						fieldtype: "Small Text",
@@ -80,6 +86,9 @@ frappe.ui.form.on("Employee Detail Change Request", {
 							selected,
 							note,
 							review_token: review.review_token,
+							acknowledge_warnings: Boolean(
+								dialog.get_value("acknowledge_warnings")
+							),
 						},
 					});
 					dialog.hide();

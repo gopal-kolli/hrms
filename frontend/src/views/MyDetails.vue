@@ -1,7 +1,7 @@
 <template>
 	<BaseLayout :pageTitle="__('My Details')">
 		<template #body>
-			<main class="details-page">
+			<main ref="page" class="details-page">
 				<router-link class="details-back" :to="{ name: 'Profile' }"
 					><FeatherIcon name="arrow-left" class="h-4 w-4" />{{ __("Profile") }}</router-link
 				>
@@ -199,7 +199,7 @@
 							<h2 id="submit-heading">{{ __("Send your changes for review") }}</h2>
 							<p>
 								{{ changedFields.length }}
-								{{ __("selected details. HR will compare these with your approved record.") }}
+								{{ __("details selected. HR will compare these with your approved record.") }}
 							</p>
 							<p v-if="retryOf">
 								{{
@@ -309,10 +309,11 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted, onBeforeUnmount, ref } from "vue"
+import { computed, inject, nextTick, onMounted, onBeforeUnmount, ref } from "vue"
 import { createResource, FeatherIcon } from "frappe-ui"
 import BaseLayout from "@/components/BaseLayout.vue"
 const __ = inject("$translate", (text) => text)
+const page = ref(null)
 const context = ref(null),
 	loading = ref(true),
 	busy = ref(false),
@@ -484,6 +485,8 @@ async function submit() {
 		})
 		await finish(draft)
 		await load()
+		await nextTick()
+		page.value?.scrollIntoView({ block: "start" })
 	} catch (e) {
 		const failure = message(e)
 		await load()
@@ -499,6 +502,8 @@ async function finishDraft() {
 	try {
 		await finish(active.value)
 		await load()
+		await nextTick()
+		page.value?.scrollIntoView({ block: "start" })
 	} catch (e) {
 		const failure = message(e)
 		await load()
@@ -517,6 +522,8 @@ async function discard() {
 		consent.value = false
 		requestId = crypto.randomUUID()
 		await load()
+		await nextTick()
+		page.value?.scrollIntoView({ block: "start" })
 	} catch (e) {
 		error.value = message(e)
 	} finally {
@@ -552,6 +559,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .details-page {
+	width: 100%;
+	padding: 24px 20px 80px;
 	max-width: 860px;
 	margin: 0 auto;
 	color: #172f35;
@@ -605,6 +614,8 @@ p {
 	margin-bottom: 8px;
 }
 .details-section-heading > span:not(.details-status) {
+	max-width: 100%;
+	overflow-wrap: anywhere;
 	color: #547076;
 	font-size: 0.9rem;
 }
@@ -867,6 +878,9 @@ small {
 	color: #172f35;
 }
 @media (max-width: 640px) {
+	.details-page {
+		padding: 16px 12px 32px;
+	}
 	h1 {
 		font-size: 1.7rem;
 	}

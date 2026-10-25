@@ -17,7 +17,8 @@ from PIL import Image
 
 import frappe
 from frappe import _
-from frappe.utils import cint, getdate, now_datetime, today, validate_email_address
+from frappe.utils import add_days, cint, getdate, now_datetime, today, validate_email_address
+from frappe.utils.password import get_encryption_key
 
 DOCTYPE = "Employee Detail Change Request"
 PROOFS = {
@@ -102,9 +103,7 @@ def _json(value):
 
 
 def _token(value):
-	return hmac.new(
-		frappe.local.conf.encryption_key.encode(), _json(value).encode(), hashlib.sha256
-	).hexdigest()
+	return hmac.new(get_encryption_key().encode(), _json(value).encode(), hashlib.sha256).hexdigest()
 
 
 def _signin():
@@ -119,9 +118,14 @@ def _enabled():
 
 
 def _employee(lock=False):
-	rows = frappe.get_all(
-		"Employee", filters={"user_id": frappe.session.user, "status": "Active"}, pluck="name", limit=2
-	)
+	rows = [
+		r[0]
+		for r in frappe.db.sql(
+			"select name from `tabEmployee` where user_id=%s and status='Active' order by name"
+			+ (" for update" if lock else ""),
+			frappe.session.user,
+		)
+	]
 	if len(rows) != 1:
 		frappe.throw(
 			_("Your login must be linked to exactly one active employee. Please contact HR."),
@@ -133,11 +137,11 @@ def _employee(lock=False):
 	return emp
 
 
-def _load_employee(name, lock=False):
+def _load_employee(name, lock=False, require_active=True):
 	if lock:
 		frappe.db.sql("select name from `tabEmployee` where name=%s for update", name)
 	emp = frappe.get_doc("Employee", name, for_update=lock)
-	if emp.status != "Active":
+	if require_active and emp.status != "Active":
 		frappe.throw(_("This employee is no longer active."), frappe.PermissionError)
 	return emp
 
@@ -154,7 +158,6 @@ def _fields():
 			"proof": proof,
 		}
 		for key, label, group, targets, kind, proof in SPECS
-		if any(meta.has_field(f) for f in targets)
 	}
 
 
@@ -219,7 +222,7 @@ def _save(doc, new=False):
 
 def has_permission(doc, ptype=None, user=None, debug=False):
 	# Employees receive only masked, allowlisted API responses, never raw snapshots.
-	if ptype not in ("read", "select") or not doc.get("employee"):
+	if ptype not in ("read", "select") or not doc.get("employee") or doc.status in ("Draft", "Withdrawn"):
 		return False
 	return _can_review(frappe.get_doc("Employee", doc.employee), user)
 
@@ -232,7 +235,7 @@ def permission_query(user=None):
 		"Has Role", {"parent": user, "parenttype": "User", "role": ["in", ["HR Manager", "System Manager"]]}
 	):
 		return "1=0"
-	return ""  # Native Employee/Company User Permissions further constrain this list.
+	return "`tabEmployee Detail Change Request`.`status` not in ('Draft', 'Withdrawn')"  # Native User Permissions also apply.
 
 
 def guard_file(doc, method=None):
@@ -250,7 +253,10 @@ def _request(name, emp=None, lock=False):
 		frappe.throw(_("Request unavailable."), frappe.PermissionError)
 	if lock:
 		frappe.db.sql(f"select name from `tab{DOCTYPE}` where name=%s for update", name)
-	return frappe.get_doc(DOCTYPE, name, for_update=lock)
+	doc = frappe.get_doc(DOCTYPE, name, for_update=lock)
+	if emp and doc.employee != emp.name:
+		frappe.throw(_("Request unavailable."), frappe.PermissionError)
+	return doc
 
 
 def _result(doc, reveal=False):
@@ -281,6 +287,8 @@ def get_context() -> dict:
 	emp = _employee()
 	fields = []
 	for key, spec in _fields().items():
+		if not spec["targets"]:
+			continue
 		values = [_clean(emp.get(f)) for f in spec["targets"]]
 		value = next((v for v in values if v), "")
 		fields.append(
@@ -329,6 +337,8 @@ def _normalize(changes):
 	result = {}
 	for key, value in changes.items():
 		spec = fields[key]
+		if not spec["targets"]:
+			frappe.throw(_("This detail is not currently supported. Contact HR."))
 		if not isinstance(value, str):
 			frappe.throw(_("Enter text for {0}.").format(spec["label"]))
 		value = value.strip()
@@ -378,6 +388,15 @@ def begin_request(changes: dict | str, expected_version: str, request_id: str, r
 		frappe.throw(_("You already have an unfinished request. Resume it or wait for HR review."))
 	if retry_of and _request(retry_of, emp).status != "Needs correction":
 		frappe.throw(_("Only a request needing correction can be resubmitted."))
+	# Bound retained proof storage without deleting submission/audit history.
+	recent = frappe.db.sql(
+		f"select creation from `tab{DOCTYPE}` where employee=%s and creation>=%s for update",
+		(emp.name, add_days(now_datetime(), -30)),
+	)
+	if len(recent) >= 20 or sum(str(r[0]) >= str(add_days(now_datetime(), -1)) for r in recent) >= 5:
+		frappe.throw(
+			_("You have reached the recent request limit. Please contact HR before starting another request.")
+		)
 	baseline = {f: _clean(emp.get(f)) for k in changes for f in _fields()[k]["targets"]}
 	if any(all(_clean(emp.get(f)) == v for f in _fields()[k]["targets"]) for k, v in changes.items()):
 		frappe.throw(_("Remove unchanged details before submitting."))
@@ -403,8 +422,16 @@ def _valid_content(content, filename):
 		frappe.throw(_("Choose a PDF, JPG or PNG file up to 5 MB."))
 	ext = Path(filename).suffix.lower()
 	if ext == ".pdf" and content.startswith(b"%PDF-"):
+		from pypdf import PdfReader
+
 		from frappe.utils.pdf import pdf_contains_js
 
+		try:
+			reader = PdfReader(io.BytesIO(content))
+			if reader.is_encrypted or not reader.pages:
+				raise ValueError
+		except Exception:
+			frappe.throw(_("Upload a readable, unencrypted PDF."))
 		if pdf_contains_js(content):
 			frappe.throw(_("This PDF contains unsafe content. Upload a plain document."))
 	elif ext in (".jpg", ".jpeg", ".png"):
@@ -435,6 +462,15 @@ def upload_proof(request: str, kind: str) -> dict:
 
 def _store_proof(doc, kind, content, filename):
 	ext = _valid_content(content, filename)
+	if ext in (".jpg", ".jpeg", ".png"):
+		with Image.open(io.BytesIO(content)) as image:
+			if image.width * image.height > 20_000_000:
+				frappe.throw(_("Choose an image smaller than 20 megapixels."))
+			output = io.BytesIO()
+			image.convert("RGB").save(output, format="PNG" if ext == ".png" else "JPEG")
+			content = output.getvalue()
+			if len(content) > 5 * 1024 * 1024:
+				frappe.throw(_("Choose a smaller proof image."))
 	field = PROOFS[kind]
 	if doc.get(field):
 		existing = frappe.get_doc("File", doc.get(field))
@@ -464,8 +500,8 @@ def _store_proof(doc, kind, content, filename):
 	return {"kind": kind, "saved": True}
 
 
-def _proofs(doc):
-	for kind in _result(doc)["required_proofs"]:
+def _proofs(doc, kinds=None):
+	for kind in kinds if kinds is not None else _result(doc)["required_proofs"]:
 		name = doc.get(PROOFS[kind])
 		if not name:
 			frappe.throw(_("Upload the {0} proof before submitting.").format(kind))
@@ -528,60 +564,81 @@ def _assert_baseline(doc, emp):
 
 
 def _duplicates(changes, emp, lock=False):
-	blockers = []
-	# Lock all active employee rows in name order before approving, serialising
+	blockers, warnings = set(), set()
+	# Lock all employee rows in name order before approving, serialising
 	# approvals across employees too (different employees can propose one ID).
 	fields = _fields()
 	for key in {"pan", "aadhaar", "bank_account", "uan", "esi"} & changes.keys():
 		for target in fields[key]["targets"]:
 			rows = frappe.db.sql(
-				f"select `{target}` from `tabEmployee` where status='Active' and name!=%s"
+				f"select `{target}`, status from `tabEmployee` where name!=%s"
 				+ (" for update" if lock else ""),
 				emp.name,
 			)
-			if any(re.sub(r"\s+", "", _clean(row[0])).upper() == changes[key] for row in rows):
-				blockers.append(fields[key]["label"] + " is already recorded for another active employee.")
-				break
-	return blockers
+			for value, status in rows:
+				if re.sub(r"\s+", "", _clean(value)).upper() == changes[key]:
+					if status == "Active":
+						blockers.add(
+							fields[key]["label"] + " is already recorded for another active employee."
+						)
+					else:
+						warnings.add(
+							fields[key]["label"]
+							+ " is recorded for an inactive employee. Verify the source before approving."
+						)
+	return {"blockers": sorted(blockers), "warnings": sorted(warnings)}
 
 
 @frappe.whitelist()
 def review_request(request: str) -> dict:
 	_enabled()
 	doc = _request(request)
-	emp = _load_employee(doc.employee)
+	emp = _load_employee(doc.employee, require_active=False)
 	_require_review(emp)
+	if doc.status in ("Draft", "Withdrawn"):
+		frappe.throw(_("This request has not been submitted for HR review."), frappe.PermissionError)
 	return _review(doc, emp)
 
 
-def _review(doc, emp):
+def _review(doc, emp, lock=False):
 	changes = json.loads(doc.changes_json)
 	baseline = json.loads(doc.baseline_json)
 	fields = _fields()
-	return _result(doc, reveal=True) | {
-		"employee_name": emp.employee_name,
-		"review_token": _token([doc.name, str(doc.modified), str(emp.modified), _snapshot(emp)]),
-		"rows": [
-			{
-				"key": k,
-				"label": fields[k]["label"],
-				"proposed": v,
-				"current": [{"field": f, "value": _clean(emp.get(f))} for f in fields[k]["targets"]],
-			}
-			for k, v in changes.items()
-		],
-		"blockers": _duplicates(changes, emp),
-		"stale": any(_clean(emp.get(f)) != v for f, v in baseline.items()),
-	}
+	duplicates = _duplicates(changes, emp, lock=lock)
+	return (
+		_result(doc, reveal=True)
+		| duplicates
+		| {
+			"employee_name": emp.employee_name,
+			"review_token": _token(
+				[doc.name, str(doc.modified), str(emp.modified), _snapshot(emp), duplicates]
+			),
+			"rows": [
+				{
+					"key": k,
+					"label": fields[k]["label"],
+					"proposed": v,
+					"current": [{"field": f, "value": _clean(emp.get(f))} for f in fields[k]["targets"]],
+				}
+				for k, v in changes.items()
+			],
+			"stale": any(_clean(emp.get(f)) != v for f, v in baseline.items()),
+		}
+	)
 
 
 @frappe.whitelist(methods=["POST"])
 def decide_request(
-	request: str, decision: str, review_token: str, selected: list | str, note: str = ""
+	request: str,
+	decision: str,
+	review_token: str,
+	selected: list | str,
+	note: str = "",
+	acknowledge_warnings: bool = False,
 ) -> dict:
 	_enabled()
 	initial = _request(request)
-	emp = _load_employee(initial.employee)
+	emp = _load_employee(initial.employee, require_active=False)
 	_require_review(emp)
 	if decision not in ("Approved", "Needs correction"):
 		frappe.throw(_("Choose Approve or Needs correction."))
@@ -597,16 +654,20 @@ def decide_request(
 		frappe.throw(_("Explain what needs correcting (5–1000 characters)."))
 	# One consistent order avoids opposite-employee approval deadlocks. Locking
 	# reads see committed state even after a previous read in MariaDB RR isolation.
-	frappe.db.sql("select name from `tabEmployee` where status='Active' order by name for update")
-	emp = _load_employee(initial.employee, lock=True)
+	frappe.db.sql("select name from `tabEmployee` order by name for update")
+	emp = _load_employee(initial.employee, lock=True, require_active=decision == "Approved")
 	_require_review(emp)
-	doc = _request(request, lock=True)
-	fingerprint = _token([decision, sorted(selected), note, frappe.session.user, review_token])
+	doc = _request(request, emp, lock=True)
+	if doc.employee != emp.name or doc.requested_by != initial.requested_by or doc.company != emp.company:
+		frappe.throw(_("Employee ownership or company changed. HR must reconcile the request before review."))
+	fingerprint = _token(
+		[decision, sorted(selected), note, frappe.session.user, review_token, acknowledge_warnings]
+	)
 	if doc.status != "Pending review":
 		if doc.decision_fingerprint == fingerprint:
 			return _result(doc)
 		frappe.throw(_("This request has already been reviewed. Refresh to see the decision."))
-	current = _review(doc, emp)
+	current = _review(doc, emp, lock=True)
 	if not hmac.compare_digest(current["review_token"], review_token):
 		frappe.throw(_("The request or Employee changed after you opened the review. Review again."))
 	changes = json.loads(doc.changes_json)
@@ -620,9 +681,11 @@ def decide_request(
 		_assert_baseline(doc, emp)
 		_proofs(doc)
 		approved = _normalize({k: changes[k] for k in selected})
-		blockers = _duplicates(approved, emp, lock=True)
-		if blockers:
-			frappe.throw(" ".join(blockers))
+		duplicates = _duplicates(approved, emp, lock=True)
+		if duplicates["blockers"]:
+			frappe.throw(" ".join(duplicates["blockers"]))
+		if duplicates["warnings"] and not acknowledge_warnings:
+			frappe.throw(_("Acknowledge the inactive-employee duplicate warnings before approval."))
 		for key, value in approved.items():
 			for field in _fields()[key]["targets"]:
 				emp.set(field, value)
@@ -653,14 +716,14 @@ def decide_request(
 def download_proof(request: str, kind: str) -> None:
 	_enabled()
 	doc = _request(request)
-	emp = _load_employee(doc.employee)
-	if not _can_review(emp):
+	emp = _load_employee(doc.employee, require_active=False)
+	if not (_can_review(emp) and doc.status not in ("Draft", "Withdrawn")):
 		own = _employee()
 		if own.name != doc.employee:
 			frappe.throw(_("Proof unavailable."), frappe.PermissionError)
 	if kind not in PROOFS or not doc.get(PROOFS[kind]):
 		frappe.throw(_("Proof unavailable."), frappe.PermissionError)
-	_proofs(doc)
+	_proofs(doc, [kind])
 	file = frappe.get_doc("File", doc.get(PROOFS[kind]))
 	frappe.local.response.filename = kind + Path(file.file_name).suffix
 	frappe.local.response.filecontent = file.get_content(encodings=[])
@@ -697,7 +760,12 @@ def get_profile() -> dict:
 		"salary_mode",
 	]
 	return {
-		"values": {key: emp.get(key) for key in keys},
+		"values": {key: emp.get(key) for key in keys}
+		| {
+			"reports_to": frappe.db.get_value("Employee", emp.reports_to, "employee_name")
+			if emp.reports_to
+			else ""
+		},
 		"fields": [
 			{"fieldname": f.fieldname, "label": f.label, "fieldtype": f.fieldtype}
 			for f in frappe.get_meta("Employee").fields
