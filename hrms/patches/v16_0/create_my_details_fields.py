@@ -6,6 +6,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 def execute():
 	definitions = [
+		("custom_father_name", "Father's / Spouse's Name", "Data", None),
 		("custom_bank_account_holder", "Bank account holder", "Data", None),
 		("custom_aadhaar_number", "Aadhaar Number", "Data", None),
 		("custom_city", "City", "Data", None),
@@ -23,7 +24,12 @@ def execute():
 	meta = frappe.get_meta("Employee")
 	missing = [
 		dict(
-			fieldname=key, label=label, fieldtype=kind, options=options, insert_after="bank_ac_no", no_copy=1
+			fieldname=key,
+			label=label,
+			fieldtype=kind,
+			options=options,
+			insert_after="last_name" if key == "custom_father_name" else "bank_ac_no",
+			no_copy=1,
 		)
 		for key, label, kind, options in definitions
 		if not meta.has_field(key)

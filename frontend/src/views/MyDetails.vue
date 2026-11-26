@@ -166,13 +166,19 @@
 										rows="3"
 									></textarea
 									><select
-										v-else-if="field.type === 'relation'"
+										v-else-if="field.options && field.options.length"
 										:id="`new-${field.key}`"
 										v-model="values[field.key]"
 										required
 										:disabled="busy"
 									>
-										<option value="">{{ __("Choose relationship") }}</option>
+										<option value="">
+											{{
+												field.type === "relation"
+													? __("Choose relationship")
+													: __("Choose")
+											}}
+										</option>
 										<option v-for="option in field.options" :key="option">
 											{{ option }}
 										</option></select

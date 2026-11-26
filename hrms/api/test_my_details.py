@@ -146,6 +146,9 @@ class TestMyDetails(HRMSTestSuite):
 		setup_my_details_fields()
 		fields = my_details._fields()
 		for key in (
+			"father_name",
+			"marital_status",
+			"blood_group",
 			"bank_holder",
 			"aadhaar",
 			"city",
@@ -158,6 +161,29 @@ class TestMyDetails(HRMSTestSuite):
 			with self.subTest(key=key):
 				self.assertIn(key, fields)
 				self.assertTrue(fields[key]["targets"])
+
+	def test_personal_details_offer_listed_choices_and_apply_only_after_approval(self):
+		fields = {field["key"]: field for field in self.context()["fields"]}
+		self.assertEqual(fields["father_name"]["group"], "Personal")
+		self.assertIn("Married", fields["marital_status"]["options"])
+		self.assertIn("O+", fields["blood_group"]["options"])
+		self.assertNotIn("", fields["blood_group"]["options"])
+		for bad in ({"blood_group": "Z+"}, {"marital_status": "Complicated"}):
+			with self.subTest(bad=bad), self.assertRaises(frappe.ValidationError):
+				self.begin(bad)
+		changes = {"father_name": "My Details Father", "marital_status": "Married", "blood_group": "O+"}
+		request = self.begin(changes)
+		self.assertEqual(request["required_proofs"], [])
+		self.submit(request)
+		for key in changes:
+			self.assertFalse(self.value(self.employee, key))
+		review = self.review(request)
+		approved = my_details.decide_request(
+			request["name"], "Approved", review["review_token"], list(changes), "Verified"
+		)
+		self.assertEqual(approved["status"], "Approved")
+		for key, value in changes.items():
+			self.assertEqual(self.value(self.employee, key), value)
 
 	def test_session_is_bound_to_employee_for_context_reveal_requests_submit_and_download(self):
 		request = self.begin({"city": "New City"})

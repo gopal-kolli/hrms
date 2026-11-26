@@ -30,6 +30,9 @@ PROOFS = {
 # Same paired PAN/IFSC and review semantics as solara_master_data_review. Native
 # payroll UAN/ESI and emergency fields move with their legacy custom aliases too.
 SPECS = [
+	("father_name", "Father's / spouse's name", "Personal", ("custom_father_name",), "text", ""),
+	("marital_status", "Marital status", "Personal", ("marital_status",), "choice", ""),
+	("blood_group", "Blood group", "Personal", ("blood_group",), "choice", ""),
 	("bank_name", "Bank name", "Bank", ("bank_name",), "text", "bank"),
 	("bank_holder", "Account holder", "Bank", ("custom_bank_account_holder",), "text", "bank"),
 	("bank_account", "Account number", "Bank", ("bank_ac_no",), "bank", "bank"),
@@ -146,6 +149,12 @@ def _load_employee(name, lock=False, require_active=True):
 	return emp
 
 
+def _choices(meta, targets):
+	"""Options of the first available Select target, without the blank entry."""
+	field = next((meta.get_field(f) for f in targets if meta.has_field(f)), None)
+	return [o.strip() for o in ((field.options or "") if field else "").split("\n") if o.strip()]
+
+
 def _fields():
 	meta = frappe.get_meta("Employee")
 	return {
@@ -156,6 +165,11 @@ def _fields():
 			"targets": [f for f in targets if meta.has_field(f)],
 			"type": kind,
 			"proof": proof,
+			"options": RELATIONS
+			if kind == "relation"
+			else _choices(meta, targets)
+			if kind == "choice"
+			else [],
 		}
 		for key, label, group, targets, kind, proof in SPECS
 	}
@@ -302,7 +316,7 @@ def get_context() -> dict:
 				"value": _mask(key, value),
 				"sensitive": key in SENSITIVE,
 				"aliases_differ": len(set(v for v in values if v)) > 1,
-				"options": RELATIONS if spec["type"] == "relation" else [],
+				"options": spec["options"],
 			}
 		)
 	names = frappe.get_all(
@@ -367,6 +381,8 @@ def _normalize(changes):
 				frappe.throw(_("Enter a valid date of birth in the past."))
 		if spec["type"] == "relation" and value not in RELATIONS:
 			frappe.throw(_("Choose a listed nominee relationship."))
+		if spec["type"] == "choice" and value not in spec["options"]:
+			frappe.throw(_("Choose one of the listed values for {0}.").format(spec["label"]))
 		result[key] = value
 	return result
 
