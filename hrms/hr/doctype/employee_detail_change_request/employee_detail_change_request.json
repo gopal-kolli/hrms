@@ -1,0 +1,166 @@
+{
+ "doctype": "DocType",
+ "name": "Employee Detail Change Request",
+ "module": "HR",
+ "autoname": "prompt",
+ "engine": "InnoDB",
+ "track_changes": 0,
+ "allow_rename": 0,
+ "field_order": [
+  "employee",
+  "company",
+  "requested_by",
+  "status",
+  "changes_json",
+  "baseline_json",
+  "retry_of",
+  "consented_on",
+  "reviewed_by",
+  "reviewed_on",
+  "review_note",
+  "applied_fields_json",
+  "decision_fingerprint",
+  "bank_proof",
+  "pan_proof",
+  "aadhaar_proof",
+  "statutory_proof"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "label": "Employee",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "Employee",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "company",
+   "label": "Company",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "Company",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "label": "Requested by",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "label": "Status",
+   "fieldtype": "Select",
+   "read_only": 1,
+   "options": "Draft\nPending review\nApproved\nNeeds correction\nWithdrawn",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "changes_json",
+   "label": "Proposed changes",
+   "fieldtype": "Code",
+   "read_only": 1,
+   "options": "JSON",
+   "hidden": 1
+  },
+  {
+   "fieldname": "baseline_json",
+   "label": "Approved values at request",
+   "fieldtype": "Code",
+   "read_only": 1,
+   "options": "JSON",
+   "hidden": 1
+  },
+  {
+   "fieldname": "retry_of",
+   "label": "Corrects request",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "Employee Detail Change Request"
+  },
+  {
+   "fieldname": "consented_on",
+   "label": "Confirmed on",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "label": "Reviewed by",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "User"
+  },
+  {
+   "fieldname": "reviewed_on",
+   "label": "Reviewed on",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_note",
+   "label": "Review note",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "applied_fields_json",
+   "label": "Approved fields",
+   "fieldtype": "Code",
+   "read_only": 1,
+   "options": "JSON"
+  },
+  {
+   "fieldname": "decision_fingerprint",
+   "label": "Decision fingerprint",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "bank_proof",
+   "label": "Bank proof",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "File"
+  },
+  {
+   "fieldname": "pan_proof",
+   "label": "Pan proof",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "File"
+  },
+  {
+   "fieldname": "aadhaar_proof",
+   "label": "Aadhaar proof",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "File"
+  },
+  {
+   "fieldname": "statutory_proof",
+   "label": "Statutory proof",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "File"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "HR Manager",
+   "read": 1,
+   "select": 1
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "select": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

@@ -4,6 +4,9 @@ from hrms.setup import after_install as setup
 
 
 def after_install():
+	from hrms.patches.v16_0.create_my_details_fields import execute
+
+	execute()
 	try:
 		print("Setting up Frappe HR...")
 		setup()

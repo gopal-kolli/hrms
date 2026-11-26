@@ -70,7 +70,7 @@
 						v-if="request.can_approve && request.status === 'Pending'"
 						class="comp-off-decision"
 					>
-						<h2>{{ __("Manager decision") }}</h2>
+						<h2>{{ __("Approval decision") }}</h2>
 						<p>
 							{{
 								__(
@@ -153,7 +153,7 @@ async function load() {
 		if (!(bootEnablesCompOff() || compOffContext.data?.enabled)) return
 		const own = await compOffRequests.fetch({ team: 0 })
 		request.value = own.find((item) => item.name === props.id)
-		if (!request.value && compOffContext.data?.is_manager) {
+		if (!request.value && (compOffContext.data?.is_manager || compOffContext.data?.is_company_approver)) {
 			const team = await compOffRequests.fetch({ team: 1 })
 			request.value = team.find((item) => item.name === props.id)
 		}

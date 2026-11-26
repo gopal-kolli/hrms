@@ -9,7 +9,7 @@ from frappe import _, qb
 from frappe.model.document import Document
 from frappe.query_builder import Criterion
 from frappe.query_builder.custom import ConstantColumn
-from frappe.query_builder.functions import Count
+from frappe.query_builder.functions import Count, Sum
 from frappe.utils import (
 	add_days,
 	add_months,
@@ -33,10 +33,7 @@ from frappe.utils import (
 
 import erpnext
 from erpnext import get_company_currency
-from erpnext.setup.doctype.employee.employee import (
-	InactiveEmployeeStatusError,
-	get_holiday_list_for_employee,
-)
+from erpnext.setup.doctype.employee.employee import InactiveEmployeeStatusError
 
 from hrms.hr.doctype.leave_policy_assignment.leave_policy_assignment import (
 	calculate_pro_rated_leaves,
@@ -202,28 +199,18 @@ def validate_dates(doc, from_date, to_date, restrict_future_dates=True):
 
 
 def validate_overlap(doc, from_date, to_date, company=None):
-	query = """
-		select name
-		from `tab{0}`
-		where name != %(name)s
-		"""
-	query += get_doc_condition(doc.doctype)
-
 	if not doc.name:
 		# hack! if name is null, it could cause problems with !=
 		doc.name = "New " + doc.doctype
 
-	overlap_doc = frappe.db.sql(
-		query.format(doc.doctype),
-		{
-			"employee": doc.get("employee"),
-			"from_date": from_date,
-			"to_date": to_date,
-			"name": doc.name,
-			"company": company,
-		},
-		as_dict=1,
-	)
+	table = frappe.qb.DocType(doc.doctype)
+	query = frappe.qb.from_(table).select(table.name).where(table.name != doc.name)
+
+	condition = get_doc_condition(doc.doctype, table, doc.get("employee"), from_date, to_date, company)
+	if condition is not None:
+		query = query.where(condition)
+
+	overlap_doc = query.run(as_dict=True)
 
 	if overlap_doc:
 		if doc.get("employee"):
@@ -233,16 +220,23 @@ def validate_overlap(doc, from_date, to_date, company=None):
 		throw_overlap_error(doc, exists_for, overlap_doc[0].name, from_date, to_date)
 
 
-def get_doc_condition(doctype):
+def get_doc_condition(doctype, table, employee, from_date, to_date, company):
 	if doctype == "Compensatory Leave Request":
-		return "and employee = %(employee)s and docstatus < 2 \
-		and (work_from_date between %(from_date)s and %(to_date)s \
-		or work_end_date between %(from_date)s and %(to_date)s \
-		or (work_from_date < %(from_date)s and work_end_date > %(to_date)s))"
+		return (
+			(table.employee == employee)
+			& (table.docstatus < 2)
+			& (
+				table.work_from_date.between(from_date, to_date)
+				| table.work_end_date.between(from_date, to_date)
+				| ((table.work_from_date < from_date) & (table.work_end_date > to_date))
+			)
+		)
 	elif doctype == "Leave Period":
-		return "and company = %(company)s and (`from_date` between %(from_date)s and %(to_date)s \
-			or `to_date` between %(from_date)s and %(to_date)s \
-			or (`from_date` < %(from_date)s and `to_date` > %(to_date)s))"
+		return (table.company == company) & (
+			table.from_date.between(from_date, to_date)
+			| table.to_date.between(from_date, to_date)
+			| ((table.from_date < from_date) & (table.to_date > to_date))
+		)
 
 
 def throw_overlap_error(doc, exists_for, overlap_doc, from_date, to_date):
@@ -678,31 +672,34 @@ def get_salary_assignments(employee, payroll_period):
 
 def get_sal_slip_total_benefit_given(employee, payroll_period, component=False):
 	total_given_benefit_amount = 0
-	query = """
-	select sum(sd.amount) as total_amount
-	from `tabSalary Slip` ss, `tabSalary Detail` sd
-	where ss.employee=%(employee)s
-	and ss.docstatus = 1 and ss.name = sd.parent
-	and sd.is_flexible_benefit = 1 and sd.parentfield = "earnings"
-	and sd.parenttype = "Salary Slip"
-	and (ss.start_date between %(start_date)s and %(end_date)s
-		or ss.end_date between %(start_date)s and %(end_date)s
-		or (ss.start_date < %(start_date)s and ss.end_date > %(end_date)s))
-	"""
+	start_date = payroll_period.start_date
+	end_date = payroll_period.end_date
+
+	ss = frappe.qb.DocType("Salary Slip")
+	sd = frappe.qb.DocType("Salary Detail")
+	query = (
+		frappe.qb.from_(ss)
+		.from_(sd)
+		.select(Sum(sd.amount).as_("total_amount"))
+		.where(
+			(ss.employee == employee)
+			& (ss.docstatus == 1)
+			& (ss.name == sd.parent)
+			& (sd.is_flexible_benefit == 1)
+			& (sd.parentfield == "earnings")
+			& (sd.parenttype == "Salary Slip")
+			& (
+				ss.start_date.between(start_date, end_date)
+				| ss.end_date.between(start_date, end_date)
+				| ((ss.start_date < start_date) & (ss.end_date > end_date))
+			)
+		)
+	)
 
 	if component:
-		query += "and sd.salary_component = %(component)s"
+		query = query.where(sd.salary_component == component)
 
-	sum_of_given_benefit = frappe.db.sql(
-		query,
-		{
-			"employee": employee,
-			"start_date": payroll_period.start_date,
-			"end_date": payroll_period.end_date,
-			"component": component,
-		},
-		as_dict=True,
-	)
+	sum_of_given_benefit = query.run(as_dict=True)
 
 	if sum_of_given_benefit and flt(sum_of_given_benefit[0].total_amount) > 0:
 		total_given_benefit_amount = sum_of_given_benefit[0].total_amount
@@ -728,21 +725,12 @@ def get_holidays_for_employee(employee, start_date, end_date, raise_exception=Tr
 
 	return: list of dicts with `holiday_date` and `description`
 	"""
-	holiday_list = get_holiday_list_for_employee(employee, raise_exception=raise_exception)
+	from hrms.utils.holiday_list import get_holiday_list_ranges_for_employee, get_holidays_in_ranges
 
-	if not holiday_list:
-		return []
-
-	filters = {"parent": holiday_list, "holiday_date": ("between", [start_date, end_date])}
-
-	if only_non_weekly:
-		filters["weekly_off"] = False
-
-	holidays = frappe.get_all(
-		"Holiday", fields=["description", "holiday_date"], filters=filters, order_by="holiday_date"
+	holiday_list_ranges = get_holiday_list_ranges_for_employee(
+		employee, start_date, end_date, raise_exception=raise_exception
 	)
-
-	return holidays
+	return get_holidays_in_ranges(holiday_list_ranges, skip_weekly_offs=only_non_weekly)
 
 
 @erpnext.allow_regional
@@ -768,28 +756,22 @@ def calculate_tax_with_marginal_relief(tax_slab, tax_amount, annual_taxable_earn
 
 def get_previous_claimed_amount(employee, payroll_period, non_pro_rata=False, component=False):
 	total_claimed_amount = 0
-	query = """
-	select sum(claimed_amount) as 'total_amount'
-	from `tabEmployee Benefit Claim`
-	where employee=%(employee)s
-	and docstatus = 1
-	and (claim_date between %(start_date)s and %(end_date)s)
-	"""
-	if non_pro_rata:
-		query += "and pay_against_benefit_claim = 1"
-	if component:
-		query += "and earning_component = %(component)s"
-
-	sum_of_claimed_amount = frappe.db.sql(
-		query,
-		{
-			"employee": employee,
-			"start_date": payroll_period.start_date,
-			"end_date": payroll_period.end_date,
-			"component": component,
-		},
-		as_dict=True,
+	ebc = frappe.qb.DocType("Employee Benefit Claim")
+	query = (
+		frappe.qb.from_(ebc)
+		.select(Sum(ebc.claimed_amount).as_("total_amount"))
+		.where(
+			(ebc.employee == employee)
+			& (ebc.docstatus == 1)
+			& (ebc.claim_date.between(payroll_period.start_date, payroll_period.end_date))
+		)
 	)
+	if non_pro_rata:
+		query = query.where(ebc.pay_against_benefit_claim == 1)
+	if component:
+		query = query.where(ebc.earning_component == component)
+
+	sum_of_claimed_amount = query.run(as_dict=True)
 	if sum_of_claimed_amount and flt(sum_of_claimed_amount[0].total_amount) > 0:
 		total_claimed_amount = sum_of_claimed_amount[0].total_amount
 	return total_claimed_amount

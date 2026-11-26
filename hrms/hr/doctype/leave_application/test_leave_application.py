@@ -65,10 +65,10 @@ class TestLeaveApplication(HRMSTestSuite):
 		)
 
 	def _clear_roles(self):
-		frappe.db.sql(
-			"""delete from `tabHas Role` where parent in
-			('test@example.com', 'test1@example.com', 'test2@example.com')"""
-		)
+		has_role = frappe.qb.DocType("Has Role")
+		frappe.qb.from_(has_role).delete().where(
+			has_role.parent.isin(["test@example.com", "test1@example.com", "test2@example.com"])
+		).run()
 
 	def get_application(self, doc):
 		application = frappe.copy_doc(frappe.get_doc("Leave Application", doc))
@@ -941,6 +941,26 @@ class TestLeaveApplication(HRMSTestSuite):
 		employee.leave_approver = ""
 		employee.save()
 
+	def test_leave_approver_mandatory(self):
+		frappe.db.set_single_value("HR Settings", "leave_approver_mandatory_in_leave_application", 1)
+
+		employee = get_employee()
+		application = frappe.get_doc(
+			doctype="Leave Application",
+			employee=employee.name,
+			leave_type="_Test Leave Type",
+			from_date="2014-06-01",
+			to_date="2014-06-02",
+			posting_date="2014-05-30",
+			description="_Test Reason",
+			company="_Test Company",
+		)
+		self.assertRaises(frappe.ValidationError, application.insert)
+
+		application.leave_approver = "test@example.com"
+		application.insert()
+		self.assertEqual(application.leave_approver_name, frappe.utils.get_fullname("test@example.com"))
+
 	def test_self_leave_approval_allowed(self):
 		frappe.db.set_single_value("HR Settings", "prevent_self_leave_approval", 0)
 
@@ -1530,6 +1550,65 @@ class TestLeaveApplication(HRMSTestSuite):
 		leave_application.status = "Approved"
 		leave_application.submit()
 		self.assertEqual(leave_application.docstatus, 1)
+
+	def test_leave_access_for_workflow_reviewer_without_employee_permission(self):
+		reviewer_user = "reviewer_without_employee_access@example.com"
+		reviewer_employee = make_employee(reviewer_user, "_Test Company")
+		add_user_permission("Employee", reviewer_employee, reviewer_user, hide_descendants=1)
+
+		target_employee_user = "employee_reviewed_by_workflow@example.com"
+		target_employee = make_employee(target_employee_user, "_Test Company")
+		make_allocation_record(target_employee, from_date="2026-04-01", to_date="2027-03-31")
+
+		frappe.set_user(target_employee_user)
+		leave_application = make_leave_application(
+			target_employee,
+			from_date="2026-04-20",
+			to_date="2026-04-20",
+			leave_type="_Test Leave Type",
+			status="Draft",
+			submit=False,
+		)
+		# simulates access granted via workflow review, without a leave_approver
+		frappe.share.add_docshare("Leave Application", leave_application.name, reviewer_user, read=1)
+
+		frappe.set_user(reviewer_user)
+		self.assertRaises(
+			frappe.PermissionError,
+			frappe.get_doc("Employee", target_employee).check_permission,
+			"read",
+		)
+		self.assertRaises(
+			frappe.PermissionError,
+			get_leave_details,
+			target_employee,
+			leave_application.from_date,
+		)
+
+		leave_details = get_leave_details(
+			target_employee,
+			leave_application.from_date,
+			leave_application=leave_application.name,
+		)
+		self.assertTrue(leave_details["leave_allocation"])
+
+		# a leave application shared with the reviewer must not unlock a different employee's data
+		make_allocation_record(reviewer_employee, from_date="2026-04-01", to_date="2027-03-31")
+		own_leave_application = make_leave_application(
+			reviewer_employee,
+			from_date="2026-04-21",
+			to_date="2026-04-21",
+			leave_type="_Test Leave Type",
+			status="Draft",
+			submit=False,
+		)
+		self.assertRaises(
+			frappe.PermissionError,
+			get_leave_details,
+			target_employee,
+			leave_application.from_date,
+			leave_application=own_leave_application.name,
+		)
 
 
 def create_carry_forwarded_allocation(employee, leave_type, date=None):

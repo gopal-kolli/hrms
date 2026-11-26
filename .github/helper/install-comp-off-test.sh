@@ -3,10 +3,14 @@
 set -euo pipefail
 sudo apt-get update -qq
 sudo apt-get install -y redis-server mariadb-client libmariadb-dev libcups2-dev
+# Salary-slip email tests render real PDFs. Install the official patched Qt build.
+curl -fsSL --retry 3 https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.jammy_amd64.deb -o /tmp/wkhtmltox.deb
+sudo apt-get install -y /tmp/wkhtmltox.deb
+wkhtmltopdf --version
 cd "$HOME"
 git clone --depth 1 --branch version-16 https://github.com/frappe/frappe.git frappe
-git -C frappe fetch --depth 1 origin 9523516cac25992bc2cd810e1015df8994c257f5
-git -C frappe checkout 9523516cac25992bc2cd810e1015df8994c257f5
+git -C frappe fetch --depth 1 origin 97a5dd93ca5883bcc9c4ef9834120c5cba397b67
+git -C frappe checkout 97a5dd93ca5883bcc9c4ef9834120c5cba397b67
 bench init --skip-assets --frappe-path "$HOME/frappe" --python "$(which python)" frappe-bench
 cd frappe-bench
 bench set-config -g db_host 127.0.0.1
@@ -16,8 +20,8 @@ bench setup redis
 redis-server config/redis_cache.conf &
 redis-server config/redis_queue.conf &
 git clone --depth 1 --branch version-16 https://github.com/frappe/erpnext.git "$HOME/erpnext-source"
-git -C "$HOME/erpnext-source" fetch --depth 1 origin 8378b6e203841c056925420cc44e6d631c915cf1
-git -C "$HOME/erpnext-source" checkout 8378b6e203841c056925420cc44e6d631c915cf1
+git -C "$HOME/erpnext-source" fetch --depth 1 origin af63cde4941570ec7b9e12422c68302762cfcf91
+git -C "$HOME/erpnext-source" checkout af63cde4941570ec7b9e12422c68302762cfcf91
 bench get-app --skip-assets erpnext "$HOME/erpnext-source"
 bench get-app --skip-assets hrms "$GITHUB_WORKSPACE"
 bench new-site test_site --mariadb-root-password root --admin-password test-only-password --db-host 127.0.0.1 --no-mariadb-socket
@@ -27,3 +31,10 @@ bench --site test_site set-config allow_tests 1
 bench --site test_site install-app erpnext
 bench --site test_site install-app hrms
 bench build --app frappe
+
+# Real PDF rendering fetches local CSS/assets; keep the web process available
+# without starting scheduler or workers on this disposable test bench.
+bench --site test_site set-config host_name http://127.0.0.1:8000
+bench use test_site
+bench --site test_site serve --port 8000 --noreload > logs/ci-web.log 2>&1 &
+curl -fsS --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:8000/api/method/ping

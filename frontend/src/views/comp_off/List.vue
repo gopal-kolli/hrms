@@ -59,7 +59,7 @@
 					</div>
 
 					<div
-						v-if="isManager"
+						v-if="canReview"
 						class="comp-off-tabs"
 						role="tablist"
 						aria-label="Comp Off requests"
@@ -133,7 +133,7 @@
 						<p>
 							{{
 								activeTab === "team"
-									? __("Direct-report requests that need your decision will appear here.")
+									? __("Comp Off requests you can review will appear here.")
 									: __("After working an eligible holiday, request your credit here.")
 							}}
 						</p>
@@ -161,7 +161,9 @@ const loadingContext = ref(true)
 const error = ref("")
 const contextError = ref("")
 const enabled = computed(() => bootEnablesCompOff() || compOffContext.data?.enabled === true)
-const isManager = computed(() => compOffContext.data?.is_manager === true)
+const canReview = computed(
+	() => compOffContext.data?.is_manager === true || compOffContext.data?.is_company_approver === true
+)
 const requests = compOffRequests
 
 const formatDate = (date) => dayjs(date).format("D MMM YYYY")
@@ -198,7 +200,7 @@ async function initialize() {
 	}
 	loadingContext.value = false
 	if (enabled.value && !contextError.value) {
-		activeTab.value = route.query.view === "approval" && isManager.value ? "team" : "mine"
+		activeTab.value = route.query.view === "approval" && canReview.value ? "team" : "mine"
 		await loadRequests()
 	}
 }
